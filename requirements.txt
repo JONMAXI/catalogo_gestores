@@ -1,0 +1,9 @@
+Flask==3.0.3
+gunicorn==22.0.0
+pandas==2.2.2
+plotly==5.24.1
+matplotlib==3.9.2
+networkx==3.3
+pydot==2.0.0
+Werkzeug==3.0.3
+mysql-connector-python==9.0.0

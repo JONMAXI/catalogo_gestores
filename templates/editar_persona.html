@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-3">
+  <h4>Editar Persona</h4>
+  <form method="POST" id="form-persona" novalidate>
+
+    <!-- Datos personales -->
+    <div class="row">
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Nombres</label>
+        <input type="text" name="nombres" class="form-control" maxlength="50" pattern="^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$" title="Solo letras" required
+               value="{{ persona.nombres }}">
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Apellido Paterno</label>
+        <input type="text" name="apellidop" class="form-control" maxlength="30" pattern="^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$" title="Solo letras" required
+               value="{{ persona.apellidop }}">
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Apellido Materno</label>
+        <input type="text" name="apellidom" class="form-control" maxlength="30" pattern="^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$" title="Solo letras"
+               value="{{ persona.apellidom }}">
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Número de Empleado</label>
+      <input type="text" name="numero_empleado" class="form-control" maxlength="10" pattern="^[0-9]+$" title="Solo números"
+             value="{{ persona.numero_empleado }}">
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Correo</label>
+      <input type="email" name="correo" class="form-control" maxlength="80" placeholder="correo@ejemplo.com"
+             value="{{ persona.correo }}">
+    </div>
+
+    <div class="row">
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Teléfono 1</label>
+        <input type="text" name="telefono_uno" class="form-control" maxlength="10" pattern="^[0-9]{10}$" title="Debe tener 10 dígitos"
+               value="{{ persona.telefono_uno }}">
+      </div>
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Teléfono 2</label>
+        <input type="text" name="telefono_dos" class="form-control" maxlength="10" pattern="^[0-9]{10}$" title="Debe tener 10 dígitos"
+               value="{{ persona.telefono_dos }}">
+      </div>
+    </div>
+
+    <!-- Cascada: Departamento → Puesto → Jefe -->
+    <div class="mb-3">
+      <label class="form-label">Departamento</label>
+      <select name="departamento_id" id="departamento_id" class="form-select" required>
+        <option value="">-- Selecciona departamento --</option>
+        {% for dept in departamentos %}
+          <option value="{{ dept.id }}" {% if current_puesto_id and puestos | selectattr('id','equalto',current_puesto_id) | map(attribute='departamento_id') | first == dept.id %}selected{% endif %}>
+            {{ dept.nombre }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Puesto</label>
+      <select name="puesto_id" id="puesto_id" class="form-select" disabled required>
+        <option value="">-- Selecciona puesto --</option>
+        {% for puesto in puestos %}
+          <option value="{{ puesto.id }}" data-dept="{{ puesto.departamento_id }}" data-nivel="{{ puesto.nivel }}"
+                  {% if puesto.id == current_puesto_id %}selected{% endif %}>
+            {{ puesto.nombre }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Jefe</label>
+      <select name="jefe_id" id="jefe_id" class="form-select" disabled>
+        <option value="">-- Selecciona jefe --</option>
+        {% for jefe in jefes %}
+          <option value="{{ jefe.id }}" data-dept="{{ jefe.departamento_id }}" data-nivel="{{ jefe.nivel }}"
+                  {% if jefe.id == current_jefe_id %}selected{% endif %}>
+            {{ jefe.nombres }} {{ jefe.apellidop }} {{ jefe.apellidom }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <hr>
+
+    <!-- Usuario y contraseña -->
+    <div class="mb-3">
+      <label for="username" class="form-label">Usuario</label>
+      <input type="text" class="form-control" name="username" id="username" maxlength="20" pattern="^[A-Za-z0-9_]+$"
+             title="Solo letras, números y guiones bajos" placeholder="ej. número de empleado">
+    </div>
+
+    <div class="mb-3">
+      <label for="password" class="form-label">Contraseña</label>
+      <input type="password" class="form-control" name="password" id="password" maxlength="30" minlength="6" placeholder="********">
+    </div>
+
+    <button type="submit" class="btn btn-primary">
+      <i class="fa-solid fa-pencil"></i> Actualizar
+    </button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancelar</a>
+  </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const deptSelect = document.getElementById('departamento_id');
+    const puestoSelect = document.getElementById('puesto_id');
+    const jefeSelect = document.getElementById('jefe_id');
+    const form = document.getElementById('form-persona');
+
+    const currentPuestoId = "{{ current_puesto_id }}";
+    const currentJefeId = "{{ current_jefe_id }}";
+
+    // Guardar todos los puestos y jefes originales
+    const allPuestos = Array.from(puestoSelect.querySelectorAll('option')).filter(o => o.value !== "");
+    const allJefes = Array.from(jefeSelect.querySelectorAll('option')).filter(o => o.value !== "");
+
+    function filtrarPuestos() {
+        const deptId = deptSelect.value;
+        puestoSelect.innerHTML = '<option value="">-- Selecciona puesto --</option>';
+
+        allPuestos.forEach(opt => {
+            if (opt.dataset.dept === deptId) {
+                const nuevoOpt = document.createElement('option');
+                nuevoOpt.value = opt.value;
+                nuevoOpt.textContent = opt.textContent;
+                nuevoOpt.dataset.dept = opt.dataset.dept;
+                nuevoOpt.dataset.nivel = opt.dataset.nivel;
+
+                if (opt.value === currentPuestoId) {
+                    nuevoOpt.selected = true;
+                }
+
+                puestoSelect.appendChild(nuevoOpt);
+            }
+        });
+
+        puestoSelect.disabled = deptId === '';
+        filtrarJefes();
+    }
+
+    function filtrarJefes() {
+        const selectedPuesto = puestoSelect.selectedOptions[0];
+        jefeSelect.innerHTML = '<option value="">-- Selecciona jefe --</option>';
+
+        if (!selectedPuesto) {
+            jefeSelect.disabled = true;
+            return;
+        }
+
+        const selectedNivel = parseInt(selectedPuesto.dataset.nivel);
+
+        allJefes.forEach(opt => {
+            const jefeNivel = parseInt(opt.dataset.nivel);
+            if (opt.dataset.dept === deptSelect.value && jefeNivel > selectedNivel) {
+                const nuevoOpt = document.createElement('option');
+                nuevoOpt.value = opt.value;
+                nuevoOpt.textContent = opt.textContent;
+                nuevoOpt.dataset.dept = opt.dataset.dept;
+                nuevoOpt.dataset.nivel = opt.dataset.nivel;
+
+                if (opt.value === currentJefeId) {
+                    nuevoOpt.selected = true;
+                }
+
+                jefeSelect.appendChild(nuevoOpt);
+            }
+        });
+
+        jefeSelect.disabled = jefeSelect.options.length <= 1;
+    }
+
+    // Seleccionar departamento del puesto actual al cargar
+    if (currentPuestoId) {
+        const puestoActual = allPuestos.find(p => p.value === currentPuestoId);
+        if (puestoActual) {
+            deptSelect.value = puestoActual.dataset.dept;
+        }
+    }
+
+    filtrarPuestos();
+
+    // Escuchar cambios
+    deptSelect.addEventListener('change', filtrarPuestos);
+    puestoSelect.addEventListener('change', filtrarJefes);
+
+    // Validaciones en tiempo real
+    form.querySelectorAll('input[type="text"], input[type="password"]').forEach(input => {
+        input.addEventListener('input', () => {
+            input.value = input.value.trimStart();
+        });
+    });
+
+    // Validación de envío
+    form.addEventListener('submit', function(e) {
+        if (!form.checkValidity()) {
+            e.preventDefault();
+            e.stopPropagation();
+            alert('Por favor, revisa los campos marcados. Algunos datos no son válidos.');
+        }
+    });
+});
+</script>
+
+{% endblock %}

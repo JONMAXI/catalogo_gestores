@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h4>Dar de Baja a {{ persona.nombre }}</h4>
+
+<form method="POST">
+  <div class="mb-3">
+    <label class="form-label">Motivo de la baja</label>
+    <textarea name="motivo" class="form-control" rows="4" required></textarea>
+  </div>
+  <button type="submit" class="btn btn-danger"><i class="fa-solid fa-user-slash"></i> Dar de baja</button>
+  <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancelar</a>
+</form>
+{% endblock %}

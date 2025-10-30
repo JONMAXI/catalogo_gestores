@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-3">
+  <h4>Registrar Nueva Persona</h4>
+  <form method="POST" id="form-persona" novalidate>
+
+    <!-- Datos personales -->
+    <div class="row">
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Nombres</label>
+        <input type="text" name="nombres" class="form-control" maxlength="50" pattern="^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$" title="Solo letras" required>
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Apellido Paterno</label>
+        <input type="text" name="apellidop" class="form-control" maxlength="30" pattern="^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$" title="Solo letras" required>
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Apellido Materno</label>
+        <input type="text" name="apellidom" class="form-control" maxlength="30" pattern="^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$" title="Solo letras">
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Número de Empleado</label>
+      <input type="text" name="numero_empleado" class="form-control" maxlength="10" pattern="^[0-9]+$" title="Solo números">
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Correo</label>
+      <input type="email" name="correo" class="form-control" maxlength="80" placeholder="correo@ejemplo.com">
+    </div>
+
+    <div class="row">
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Teléfono 1</label>
+        <input type="text" name="telefono_uno" class="form-control" maxlength="10" pattern="^[0-9]{10}$" title="Debe tener 10 dígitos">
+      </div>
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Teléfono 2</label>
+        <input type="text" name="telefono_dos" class="form-control" maxlength="10" pattern="^[0-9]{10}$" title="Debe tener 10 dígitos">
+      </div>
+    </div>
+
+    <!-- Cascada: Departamento → Puesto → Jefe -->
+    <div class="mb-3">
+      <label class="form-label">Departamento</label>
+      <select name="departamento_id" id="departamento_id" class="form-select" required>
+        <option value="">-- Selecciona departamento --</option>
+        {% for dept in departamentos %}
+          <option value="{{ dept.id }}">{{ dept.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Puesto</label>
+      <select name="puesto_id" id="puesto_id" class="form-select" disabled required>
+        <option value="">-- Selecciona puesto --</option>
+        {% for puesto in puestos %}
+          <option value="{{ puesto.id }}" data-dept="{{ puesto.departamento_id }}" data-nivel="{{ puesto.nivel }}">
+            {{ puesto.nombre }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Jefe</label>
+      <select name="jefe_id" id="jefe_id" class="form-select" disabled>
+        <option value="">-- Selecciona jefe --</option>
+        {% for jefe in jefes %}
+          <option value="{{ jefe.id }}" data-dept="{{ jefe.departamento_id }}" data-nivel="{{ jefe.nivel }}">
+            {{ jefe.nombres }} {{ jefe.apellidop }} {{ jefe.apellidom }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <hr>
+
+    <!-- Usuario y contraseña -->
+    <div class="mb-3">
+      <label for="username" class="form-label">Usuario</label>
+      <input type="text" class="form-control" name="username" id="username" maxlength="20" pattern="^[A-Za-z0-9_]+$" title="Solo letras, números y guiones bajos" placeholder="ej. número de empleado" required>
+    </div>
+
+    <div class="mb-3">
+      <label for="password" class="form-label">Contraseña</label>
+      <input type="password" class="form-control" name="password" id="password" maxlength="30" minlength="6" placeholder="********" required>
+    </div>
+
+    <button type="submit" class="btn btn-success">
+      <i class="fa-solid fa-plus"></i> Registrar
+    </button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancelar</a>
+  </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const deptSelect = document.getElementById('departamento_id');
+    const puestoSelect = document.getElementById('puesto_id');
+    const jefeSelect = document.getElementById('jefe_id');
+    const form = document.getElementById('form-persona');
+
+    const allPuestos = Array.from(puestoSelect.options);
+    const allJefes = Array.from(jefeSelect.options);
+
+    // Cascada: Departamento -> Puesto -> Jefe
+    deptSelect.addEventListener('change', function() {
+        const deptId = this.value;
+        puestoSelect.innerHTML = '<option value="">-- Selecciona puesto --</option>';
+        jefeSelect.innerHTML = '<option value="">-- Selecciona jefe --</option>';
+        jefeSelect.disabled = true;
+
+        if (!deptId) {
+            puestoSelect.disabled = true;
+            return;
+        }
+
+        allPuestos.forEach(opt => {
+            if (opt.dataset.dept === deptId) puestoSelect.appendChild(opt);
+        });
+        puestoSelect.disabled = false;
+    });
+
+    puestoSelect.addEventListener('change', function() {
+        const selectedPuesto = this.selectedOptions[0];
+        if (!selectedPuesto) return;
+        const selectedNivel = parseInt(selectedPuesto.dataset.nivel);
+        jefeSelect.innerHTML = '<option value="">-- Selecciona jefe --</option>';
+        allJefes.forEach(opt => {
+            const jefeNivel = parseInt(opt.dataset.nivel);
+            if (opt.dataset.dept === deptSelect.value && jefeNivel > selectedNivel) jefeSelect.appendChild(opt);
+        });
+        jefeSelect.disabled = jefeSelect.options.length <= 1;
+    });
+
+    // Validaciones en tiempo real
+    form.querySelectorAll('input[type="text"], input[type="password"]').forEach(input => {
+        input.addEventListener('input', () => {
+            input.value = input.value.trimStart(); // sin espacios al inicio
+        });
+    });
+
+   
+});
+</script>
+{% endblock %}

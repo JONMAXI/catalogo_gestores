@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h3 class="mb-4">Nivel Jerárquico</h3>
+
+<div class="text-center">
+    {% if graph_base64 %}
+        <img src="data:image/png;base64,{{ graph_base64 }}" alt="Diagrama de árbol" class="img-fluid" style="max-width:100%; height:auto; border:1px solid #ccc; padding:10px; background:#fff;">
+    {% else %}
+        <p>No se pudo generar el diagrama.</p>
+    {% endif %}
+</div>
+{% endblock %}

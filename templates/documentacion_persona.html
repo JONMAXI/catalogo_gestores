@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<h4>Documentación de Persona #{{ persona_id }}</h4>
+
+<!-- Subir documento -->
+<form method="POST" enctype="multipart/form-data" class="mb-4">
+  <div class="row g-2">
+    <div class="col-md-6">
+      <label class="form-label">Documento</label>
+      <select name="documento_id" class="form-select" required>
+        <option value="">-- Selecciona documento --</option>
+        {% for doc in documentos %}
+          <option value="{{ doc.id }}">{{ doc.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Archivo</label>
+      <input type="file" name="archivo" class="form-control" required>
+    </div>
+  </div>
+  <button type="submit" class="btn btn-success mt-3"><i class="fa-solid fa-upload"></i> Subir</button>
+</form>
+
+<!-- Tabla de documentos cargados -->
+<table class="table table-hover table-bordered align-middle">
+  <thead class="table-dark">
+    <tr>
+      <th>Documento</th>
+      <th>Archivo</th>
+      <th>Fecha de carga</th>
+      <th>Válido</th>
+      <th>Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for doc in cargados %}
+    <tr>
+      <td>{{ doc.documento }}</td>
+      <td>{{ doc.archivo }}</td>
+      <td>{{ doc.fecha_carga.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>
+        {% if doc.valido %}
+          <span class="badge bg-success">Sí</span>
+        {% else %}
+          <span class="badge bg-danger">No</span>
+        {% endif %}
+      </td>
+      <td>
+        <!-- Botón para modal -->
+        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalDoc{{ doc.id }}">
+          Ver
+        </button>
+
+        <!-- Botón para eliminar -->
+        <form method="POST" action="{{ url_for('borrar_documento', doc_id=doc.id, persona_id=persona_id) }}" style="display:inline-block;" onsubmit="return confirm('¿Seguro que quieres borrar este documento?');">
+          <button type="submit" class="btn btn-danger btn-sm">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </form>
+      </td>
+    </tr>
+
+    <!-- Modal del documento -->
+    <div class="modal fade" id="modalDoc{{ doc.id }}" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">{{ doc.documento }}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body text-center">
+            {% if doc.archivo.endswith(('.png','.jpg','.jpeg')) %}
+              <img src="{{ url_for('static', filename='uploads/' ~ doc.archivo) }}" class="img-fluid" alt="{{ doc.documento }}">
+            {% elif doc.archivo.endswith('.pdf') %}
+              <embed src="{{ url_for('static', filename='uploads/' ~ doc.archivo) }}" type="application/pdf" width="100%" height="500px">
+            {% else %}
+              <p>Archivo: {{ doc.archivo }}</p>
+            {% endif %}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
