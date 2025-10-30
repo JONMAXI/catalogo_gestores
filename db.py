@@ -1,11 +1,12 @@
+import os
 import pymysql
 
 config = {
-    'host': '34.9.147.5',
-    'user': 'jonathan',
-    'password': ')1>SbilQ,$VKr=hO',
-    'database': 'estado_cuenta',
-    'port': 3306,
+    'host': os.environ.get('DB_HOST'),
+    'user': os.environ.get('DB_USER'),
+    'password': os.environ.get('DB_PASSWORD'),
+    'database': os.environ.get('DB_NAME'),
+    'port': int(os.environ.get('DB_PORT', 3306)),
     'cursorclass': pymysql.cursors.DictCursor
 }
 
