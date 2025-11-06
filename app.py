@@ -386,71 +386,85 @@ def nivel_jerarquico_dep(dep_id):
     # FUNCION PARA GENERAR GRAFICA INTERACTIVA
     # ---------------------------
     def generar_grafica_interactiva(personas_dep):
-        G = nx.DiGraph()
-        nodos_map = {}
-        niveles_map = {}
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    from networkx.drawing.nx_pydot import graphviz_layout
+    import colorsys
+    import mpld3
+    from mpld3 import plugins
 
-        # Crear nodos
-        for persona in personas_dep:
-            puesto = puesto_map[persona['id_puesto']]
-            nodo = f"{persona['nombre_completo']}\n({puesto['nombre']})"
+    G = nx.DiGraph()
+    nodos_map = {}
+    niveles_map = {}
 
-            info_html = (
-                f"<b>{persona['nombre_completo']}</b><br>"
-                f"Puesto: {puesto['nombre']}<br>"
-                f"Nivel: {puesto['nivel']}"
-            )
+    # Crear nodos
+    for persona in personas_dep:
+        puesto = puesto_map[persona['id_puesto']]
+        nodo = f"{persona['nombre_completo']}\n({puesto['nombre']})"
 
-            G.add_node(nodo, tooltip=info_html)
-            nodos_map[persona['id']] = nodo
-            niveles_map[nodo] = puesto['nivel']
+        info_html = (
+            f"<b>{persona['nombre_completo']}</b><br>"
+            f"Puesto: {puesto['nombre']}<br>"
+            f"Nivel: {puesto['nivel']}"
+        )
 
-        # Crear relaciones jefe → subordinado
-        for persona in personas_dep:
-            if persona.get('id_jefe'):
-                jefe_nodo = nodos_map.get(persona['id_jefe'])
-                if jefe_nodo:
-                    G.add_edge(jefe_nodo, nodos_map[persona['id']])
+        G.add_node(nodo, tooltip=info_html)
+        nodos_map[persona['id']] = nodo
+        niveles_map[nodo] = puesto['nivel']
 
-        # Layout
-        try:
-            pos = graphviz_layout(G, prog='dot')
-        except:
-            pos = nx.spring_layout(G)
+    # Crear relaciones jefe → subordinado
+    for persona in personas_dep:
+        if persona.get('id_jefe'):
+            jefe_nodo = nodos_map.get(persona['id_jefe'])
+            if jefe_nodo:
+                G.add_edge(jefe_nodo, nodos_map[persona['id']])
 
-        # Colores pastel por niveles
-        niveles_unicos = sorted(set(niveles_map.values()))
-        def pastel(h):
-            r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
-            return (r, g, b)
-        color_map = {nivel: pastel(i / len(niveles_unicos)) for i, nivel in enumerate(niveles_unicos)}
-        node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
+    # Layout vertical jerárquico
+    try:
+        pos = graphviz_layout(G, prog='dot')  # Top→Down
+    except:
+        pos = nx.spring_layout(G)
 
-        # Tamaños proporcionales
-        max_size = 2000
-        min_size = 1000
-        nivel_max = max(niveles_unicos)
-        nivel_min = min(niveles_unicos)
-        node_sizes = [
-            min_size + (niveles_map[n] - nivel_min) / (nivel_max - nivel_min) * (max_size - min_size)
-            if nivel_max != nivel_min else max_size
-            for n in G.nodes()
-        ]
+    # Colores pastel por niveles
+    niveles_unicos = sorted(set(niveles_map.values()))
+    def pastel(h):
+        r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
+        return (r, g, b)
+    color_map = {nivel: pastel(i / len(niveles_unicos)) for i, nivel in enumerate(niveles_unicos)}
+    node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
 
-        # Dibujar
-        fig, ax = plt.subplots(figsize=(15, 8))
-        scatter = nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes, ax=ax)
-        nx.draw_networkx_edges(G, pos, arrows=False, connectionstyle="arc3,rad=0.2", edge_color="#555555", width=1.5, ax=ax)
-        nx.draw_networkx_labels(G, pos, font_size=8, ax=ax)
-        ax.axis('off')
+    # Tamaños proporcionales
+    max_size = 3000
+    min_size = 1500
+    nivel_max = max(niveles_unicos)
+    nivel_min = min(niveles_unicos)
+    node_sizes = [
+        min_size + (niveles_map[n] - nivel_min) / (nivel_max - nivel_min) * (max_size - min_size)
+        if nivel_max != nivel_min else max_size
+        for n in G.nodes()
+    ]
 
-        # Tooltips interactivos
-        tooltips = [G.nodes[n]['tooltip'] for n in G.nodes()]
-        plugins.connect(fig, plugins.PointHTMLTooltip(scatter, tooltips, voffset=10, hoffset=10))
+    # Dibujar
+    fig, ax = plt.subplots(figsize=(12, 8))
+    scatter = nx.draw_networkx_nodes(
+        G, pos, node_color=node_colors, node_size=node_sizes, ax=ax
+    )
+    nx.draw_networkx_edges(G, pos, arrows=True, edge_color="#555555", connectionstyle="arc3,rad=0.2", ax=ax)
+    nx.draw_networkx_labels(G, pos, font_size=8, ax=ax)
 
-        html_graph = mpld3.fig_to_html(fig)
-        plt.close()
-        return html_graph
+    # Quitar ejes y bordes
+    ax.set_axis_off()
+    plt.tight_layout()
+
+    # Tooltips
+    tooltips = [G.nodes[n]['tooltip'] for n in G.nodes()]
+    tooltip = plugins.PointHTMLTooltip(scatter, tooltips, voffset=10, hoffset=10)
+    plugins.connect(fig, tooltip)
+
+    html_graph = mpld3.fig_to_html(fig)
+    plt.close()
+    return html_graph
+
 
     # Generar gráfico interactivo
     graph_html = generar_grafica_interactiva(personas_dep)
