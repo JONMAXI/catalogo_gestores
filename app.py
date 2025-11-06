@@ -313,6 +313,9 @@ def baja_persona(persona_id):
 
     return render_template('baja_persona.html', persona=persona)
 
+# ----------------------------
+# Vista Organigrama Mejorado
+# ----------------------------
 # ===============================================
 #   RUTA PRINCIPAL – MUESTRA EL SELECTOR
 # ===============================================
@@ -327,26 +330,29 @@ def nivel_jerarquico():
         6: "Sabuesos",
         7: "Cobranza"
     }
+
     return render_template('nivel_jerarquico.html', departamentos=departamentos)
 
 
 # ===============================================
-#   RUTA – GENERA ORGANIGRAMA INTERACTIVO
+#   RUTA QUE GENERA EL ORGANIGRAMA
+#   POR DEPARTAMENTO SELECCIONADO
 # ===============================================
 @app.route('/nivel_jerarquico/<int:dep_id>')
 def nivel_jerarquico_dep(dep_id):
     import matplotlib.pyplot as plt
     import networkx as nx
     from networkx.drawing.nx_pydot import graphviz_layout
+    from io import BytesIO
+    import base64
     import colorsys
-    import mpld3
-    from mpld3 import plugins
 
     # ---------------------------
     # Obtener datos
     # ---------------------------
     with get_connection() as conn:
         cursor = conn.cursor()
+
         cursor.execute("""
             SELECT id, nombre, nivel, departamento_id 
             FROM puesto 
@@ -370,88 +376,98 @@ def nivel_jerarquico_dep(dep_id):
         personas = cursor.fetchall() or []
 
     # ---------------------------
-    # Filtrar por departamento
+    # Filtrar solo el departamento solicitado
     # ---------------------------
     personas_dep = [
         p for p in personas
         if puesto_map[p['id_puesto']]['departamento_id'] == dep_id
     ]
+
     if not personas_dep:
         return "<p class='text-center'>No hay datos para este departamento.</p>"
 
     # ---------------------------
-    # FUNCION PARA GENERAR GRAFICA INTERACTIVA
+    # Generar organigrama
     # ---------------------------
-    def generar_grafica_interactiva(personas_dep):
-    G = nx.DiGraph()
-    nodos_map = {}
-    niveles_map = {}
+    def generar_grafica(personas_dep):
+        G = nx.DiGraph()
+        nodos_map = {}
+        niveles_map = {}
 
-    # Crear nodos
-    for persona in personas_dep:
-        puesto = puesto_map[persona['id_puesto']]
-        nodo = f"{persona['nombre_completo']}\n({puesto['nombre']})"
-        info_html = (
-            f"<b>{persona['nombre_completo']}</b><br>"
-            f"Puesto: {puesto['nombre']}<br>"
-            f"Nivel: {puesto['nivel']}"
-        )
-        G.add_node(nodo, tooltip=info_html)
-        nodos_map[persona['id']] = nodo
-        niveles_map[nodo] = puesto['nivel']
+        for persona in personas_dep:
+            puesto = puesto_map[persona['id_puesto']]
+            nodo = f"{persona['nombre_completo']}\n({puesto['nombre']})"
 
-    # Crear relaciones jefe → subordinado
-    for persona in personas_dep:
-        if persona.get('id_jefe'):
-            jefe_nodo = nodos_map.get(persona['id_jefe'])
-            if jefe_nodo:
-                G.add_edge(jefe_nodo, nodos_map[persona['id']])
+            G.add_node(nodo)
+            nodos_map[persona['id']] = nodo
+            niveles_map[nodo] = puesto['nivel']
 
-    # Layout jerárquico vertical
-    try:
-        pos = graphviz_layout(G, prog='dot')  # 'dot' genera layout vertical jerárquico
-    except:
-        pos = nx.spring_layout(G)
+        # Relaciones jefe → subordinado
+        for persona in personas_dep:
+            if persona.get('id_jefe'):
+                jefe_nodo = nodos_map.get(persona['id_jefe'])
+                if jefe_nodo:
+                    G.add_edge(jefe_nodo, nodos_map[persona['id']])
 
-    # Colores pastel por niveles
-    niveles_unicos = sorted(set(niveles_map.values()))
-    def pastel(h):
-        r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
-        return (r, g, b)
-    color_map = {nivel: pastel(i / len(niveles_unicos)) for i, nivel in enumerate(niveles_unicos)}
-    node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
+        # Layout con Graphviz
+        try:
+            pos = graphviz_layout(G, prog='dot')
+        except:
+            pos = nx.spring_layout(G)
 
-    # Tamaños proporcionales
-    max_size = 2000
-    min_size = 1000
-    nivel_max = max(niveles_unicos)
-    nivel_min = min(niveles_unicos)
-    node_sizes = [
-        min_size + (niveles_map[n] - nivel_min) / (nivel_max - nivel_min) * (max_size - min_size)
-        if nivel_max != nivel_min else max_size
-        for n in G.nodes()
-    ]
+        # Colores pastel por nivel
+        niveles_unicos = sorted(set(niveles_map.values()))
 
-    # Dibujar
-    fig, ax = plt.subplots(figsize=(15, 8))
-    scatter = nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes, ax=ax)
-    nx.draw_networkx_edges(G, pos, arrows=True, edge_color="#555555", width=1.5, ax=ax)
-    nx.draw_networkx_labels(G, pos, font_size=8, font_weight='bold', ax=ax)
-    ax.axis('off')
+        def pastel(h):
+            r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
+            return (r, g, b)
 
-    # Tooltips interactivos
-    tooltips = [G.nodes[n]['tooltip'] for n in G.nodes()]
-    plugins.connect(fig, plugins.PointHTMLTooltip(scatter, tooltips, voffset=10, hoffset=10))
+        color_map = {
+            nivel: pastel(i / len(niveles_unicos))
+            for i, nivel in enumerate(niveles_unicos)
+        }
+        node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
 
-    html_graph = mpld3.fig_to_html(fig)
-    plt.close()
-    return html_graph
+        # Tamaño proporcional
+        max_size = 2000
+        min_size = 1000
+        nivel_max = max(niveles_unicos)
+        nivel_min = min(niveles_unicos)
+
+        node_sizes = [
+            min_size + (niveles_map[n] - nivel_min) / (nivel_max - nivel_min) * (max_size - min_size)
+            if nivel_max != nivel_min else max_size
+            for n in G.nodes()
+        ]
+
+        # Dibujar
+        plt.figure(figsize=(14, 6))
+        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes)
+        nx.draw_networkx_labels(G, pos, font_size=9)
+        nx.draw_networkx_edges(G, pos, arrows=False, connectionstyle="arc3,rad=0.2",
+                               edge_color="#555555", width=1.5)
+        plt.axis('off')
+
+        # Convertir a PNG base64
+        img = BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight')
+        plt.close()
+        img.seek(0)
+
+        return base64.b64encode(img.read()).decode('utf-8')
+
+    graph_base64 = generar_grafica(personas_dep)
+
+    return render_template(
+        'nivel_jerarquico_dep.html',
+        graph_base64=graph_base64,
+        dep_id=dep_id
+    )
 
 
-    # Generar gráfico interactivo
-    graph_html = generar_grafica_interactiva(personas_dep)
-
-    return render_template('nivel_jerarquico_dep.html', graph_html=graph_html, dep_id=dep_id)
+# ===============================================
+# EJECUCIÓN
+# ===============================================
 
 # -----------------------
 # Run App
