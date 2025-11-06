@@ -18,6 +18,10 @@
 <script>
 document.getElementById("depSelect").addEventListener("change", function() {
     let dep_id = this.value;
+
+    document.getElementById("resultado").innerHTML =
+        "<p class='text-muted'>Cargando organigrama...</p>";
+
     if (!dep_id) {
         document.getElementById("resultado").innerHTML = "";
         return;
