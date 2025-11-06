@@ -330,7 +330,6 @@ def nivel_jerarquico():
         6: "Sabuesos",
         7: "Cobranza"
     }
-
     return render_template('nivel_jerarquico.html', departamentos=departamentos)
 
 
@@ -351,7 +350,6 @@ def nivel_jerarquico_dep(dep_id):
     # ---------------------------
     with get_connection() as conn:
         cursor = conn.cursor()
-
         cursor.execute("""
             SELECT id, nombre, nivel, departamento_id 
             FROM puesto 
@@ -381,7 +379,6 @@ def nivel_jerarquico_dep(dep_id):
         p for p in personas
         if puesto_map[p['id_puesto']]['departamento_id'] == dep_id
     ]
-
     if not personas_dep:
         return "<p class='text-center'>No hay datos para este departamento.</p>"
 
@@ -423,16 +420,10 @@ def nivel_jerarquico_dep(dep_id):
 
         # Colores pastel por niveles
         niveles_unicos = sorted(set(niveles_map.values()))
-
         def pastel(h):
             r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
             return (r, g, b)
-
-        color_map = {
-            nivel: pastel(i / len(niveles_unicos))
-            for i, nivel in enumerate(niveles_unicos)
-        }
-
+        color_map = {nivel: pastel(i / len(niveles_unicos)) for i, nivel in enumerate(niveles_unicos)}
         node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
 
         # Tamaños proporcionales
@@ -440,65 +431,31 @@ def nivel_jerarquico_dep(dep_id):
         min_size = 1000
         nivel_max = max(niveles_unicos)
         nivel_min = min(niveles_unicos)
-
         node_sizes = [
-            min_size + (niveles_map[n] - nivel_min) /
-            (nivel_max - nivel_min) * (max_size - min_size)
+            min_size + (niveles_map[n] - nivel_min) / (nivel_max - nivel_min) * (max_size - min_size)
             if nivel_max != nivel_min else max_size
             for n in G.nodes()
         ]
 
         # Dibujar
         fig, ax = plt.subplots(figsize=(15, 8))
-
-        scatter = nx.draw_networkx_nodes(
-            G, pos,
-            node_color=node_colors,
-            node_size=node_sizes,
-            ax=ax
-        )
-
-        nx.draw_networkx_edges(
-            G, pos,
-            arrows=False,
-            connectionstyle="arc3,rad=0.2",
-            edge_color="#555555",
-            width=1.5,
-            ax=ax
-        )
-
+        scatter = nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes, ax=ax)
+        nx.draw_networkx_edges(G, pos, arrows=False, connectionstyle="arc3,rad=0.2", edge_color="#555555", width=1.5, ax=ax)
         nx.draw_networkx_labels(G, pos, font_size=8, ax=ax)
-
         ax.axis('off')
 
-        # Tooltip HTML
+        # Tooltips interactivos
         tooltips = [G.nodes[n]['tooltip'] for n in G.nodes()]
-        tooltip = plugins.PointHTMLTooltip(scatter, tooltips, voffset=10, hoffset=10)
-        plugins.connect(fig, tooltip)
-
-        # Convertir a HTML interactivo
-        import mpld3
-
-        mpld3.urls.MPLD3_URL = (
-            "https://cdn.jsdelivr.net/gh/mpld3/mpld3@v0.5.7/mpld3/js/mpld3.v0.5.7.min.js"
-        )
-        mpld3.urls.D3_URL = (
-            "https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"
-        )
+        plugins.connect(fig, plugins.PointHTMLTooltip(scatter, tooltips, voffset=10, hoffset=10))
 
         html_graph = mpld3.fig_to_html(fig)
         plt.close()
-
         return html_graph
 
     # Generar gráfico interactivo
     graph_html = generar_grafica_interactiva(personas_dep)
 
-    return render_template(
-        'nivel_jerarquico_dep.html',
-        graph_html=graph_html,
-        dep_id=dep_id
-    )
+    return render_template('nivel_jerarquico_dep.html', graph_html=graph_html, dep_id=dep_id)
 
 
 # -----------------------
