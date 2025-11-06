@@ -1,0 +1,9 @@
+<div class="text-center mt-4">
+    {% if graph_base64 %}
+        <img src="data:image/png;base64,{{ graph_base64 }}"
+             class="img-fluid"
+             style="max-width:100%; border:1px solid #ccc; padding:10px;">
+    {% else %}
+        <p>No se pudo generar el diagrama.</p>
+    {% endif %}
+</div>

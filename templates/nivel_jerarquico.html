@@ -1,13 +1,34 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h3 class="mb-4">Nivel Jerárquico</h3>
+<h3 class="mb-4">Organigrama por Departamento</h3>
 
-<div class="text-center">
-    {% if graph_base64 %}
-        <img src="data:image/png;base64,{{ graph_base64 }}" alt="Diagrama de árbol" class="img-fluid" style="max-width:100%; height:auto; border:1px solid #ccc; padding:10px; background:#fff;">
-    {% else %}
-        <p>No se pudo generar el diagrama.</p>
-    {% endif %}
+<div class="form-group mb-3">
+    <label><strong>Selecciona un departamento:</strong></label>
+    <select id="depSelect" class="form-control">
+        <option value="">-- Seleccionar --</option>
+        {% for id, nombre in departamentos.items() %}
+            <option value="{{ id }}">{{ nombre }}</option>
+        {% endfor %}
+    </select>
 </div>
+
+<div id="resultado"></div>
+
+<script>
+document.getElementById("depSelect").addEventListener("change", function() {
+    let dep_id = this.value;
+    if (!dep_id) {
+        document.getElementById("resultado").innerHTML = "";
+        return;
+    }
+
+    fetch("/nivel_jerarquico/" + dep_id)
+        .then(res => res.text())
+        .then(html => {
+            document.getElementById("resultado").innerHTML = html;
+        });
+});
+</script>
+
 {% endblock %}

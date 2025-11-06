@@ -316,8 +316,28 @@ def baja_persona(persona_id):
 # ----------------------------
 # Vista Organigrama Mejorado
 # ----------------------------
+# ===============================================
+#   RUTA PRINCIPAL – MUESTRA EL SELECTOR
+# ===============================================
 @app.route('/nivel_jerarquico')
 def nivel_jerarquico():
+    departamentos = {
+        1: "Auditoría",
+        2: "Call Center",
+        3: "Campo 1-7",
+        4: "Campo 8-21",
+        5: "Campo 22+",
+        6: "Sabuesos",
+        7: "Cobranza"
+    }
+
+    return render_template('nivel_jerarquico.html', departamentos=departamentos)
+# ===============================================
+#   RUTA QUE GENERA EL ORGANIGRAMA
+#   POR DEPARTAMENTO SELECCIONADO
+# ===============================================
+@app.route('/nivel_jerarquico/<int:dep_id>')
+def nivel_jerarquico_dep(dep_id):
     import matplotlib.pyplot as plt
     import networkx as nx
     from networkx.drawing.nx_pydot import graphviz_layout
@@ -326,103 +346,123 @@ def nivel_jerarquico():
     import colorsys
 
     # ---------------------------
-    # Obtener datos de la BD
+    # Obtener datos
     # ---------------------------
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, nombre, nivel FROM puesto WHERE activo=1")
+
+        cursor.execute("""
+            SELECT id, nombre, nivel, departamento_id 
+            FROM puesto 
+            WHERE activo = 1
+        """)
         puestos = cursor.fetchall()
         puesto_map = {p['id']: p for p in puestos}
 
         cursor.execute("""
-            SELECT p.id, CONCAT(p.apellidop,' ',p.apellidom,' ',p.nombres) AS nombre_completo,
-                   ap.id_puesto, aj.id_jefe
+            SELECT p.id, 
+                   CONCAT(p.apellidop,' ',p.apellidom,' ',p.nombres) AS nombre_completo,
+                   ap.id_puesto, 
+                   aj.id_jefe
             FROM persona p
             JOIN asigna_puesto ap ON p.id = ap.id_persona
             LEFT JOIN asigna_jefe aj 
-                   ON p.id = aj.id_persona AND (aj.fecha_fin IS NULL OR aj.fecha_fin >= CURDATE())
+                  ON p.id = aj.id_persona 
+                 AND (aj.fecha_fin IS NULL OR aj.fecha_fin >= CURDATE())
             WHERE p.estatus != 'Baja'
         """)
         personas = cursor.fetchall() or []
 
     # ---------------------------
-    # Crear grafo dirigido
+    # Filtrar solo el departamento solicitado
     # ---------------------------
-    G = nx.DiGraph()
-    nodos_map = {}
-    niveles_map = {}
+    personas_dep = [
+        p for p in personas
+        if puesto_map[p['id_puesto']]['departamento_id'] == dep_id
+    ]
 
-    for persona in personas:
-        nodo = f"{persona['nombre_completo']}\n({puesto_map[persona['id_puesto']]['nombre']})"
-        G.add_node(nodo)
-        nodos_map[persona['id']] = nodo
-        nivel = puesto_map[persona['id_puesto']]['nivel']
-        niveles_map[nodo] = nivel
-
-    for persona in personas:
-        if persona.get('id_jefe'):
-            jefe_nodo = nodos_map.get(persona['id_jefe'])
-            if jefe_nodo:
-                G.add_edge(jefe_nodo, nodos_map[persona['id']])
+    if not personas_dep:
+        return "<p class='text-center'>No hay datos para este departamento.</p>"
 
     # ---------------------------
-    # Layout jerárquico
+    # Generar organigrama
     # ---------------------------
-    try:
-        pos = graphviz_layout(G, prog='dot')
-    except:
-        pos = nx.spring_layout(G)
+    def generar_grafica(personas_dep):
+        G = nx.DiGraph()
+        nodos_map = {}
+        niveles_map = {}
 
-    # ---------------------------
-    # Colores pastel por nivel
-    # ---------------------------
-    def pastel_color(hue):
-        r, g, b = colorsys.hls_to_rgb(hue, 0.8, 0.6)  # H,L,S
-        return (r, g, b)
+        for persona in personas_dep:
+            puesto = puesto_map[persona['id_puesto']]
+            nodo = f"{persona['nombre_completo']}\n({puesto['nombre']})"
 
-    niveles_unicos = sorted(set(niveles_map.values()))
-    color_map = {nivel: pastel_color(i / len(niveles_unicos)) for i, nivel in enumerate(niveles_unicos)}
-    node_colors = [color_map[niveles_map[node]] for node in G.nodes()]
+            G.add_node(nodo)
+            nodos_map[persona['id']] = nodo
+            niveles_map[nodo] = puesto['nivel']
 
-    # ---------------------------
-    # Tamaño de nodos proporcional al nivel jerárquico (más pequeño)
-    # ---------------------------
-    max_size = 2000  # antes era 3500
-    min_size = 1000  # antes era 1500
-    nivel_max = max(niveles_unicos) if niveles_unicos else 1
-    nivel_min = min(niveles_unicos) if niveles_unicos else 1
-    node_sizes = []
-    for node in G.nodes():
-        nivel = niveles_map[node]
-        if nivel_max != nivel_min:
-            size = min_size + (nivel - nivel_min) / (nivel_max - nivel_min) * (max_size - min_size)
-        else:
-            size = max_size
-        node_sizes.append(size)
+        # Relaciones jefe → subordinado
+        for persona in personas_dep:
+            if persona.get('id_jefe'):
+                jefe_nodo = nodos_map.get(persona['id_jefe'])
+                if jefe_nodo:
+                    G.add_edge(jefe_nodo, nodos_map[persona['id']])
 
-    # ---------------------------
-    # Dibujar grafo con curvas
-    # ---------------------------
-    plt.figure(figsize=(14, max(6, len(niveles_unicos))))
-    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes)
-    nx.draw_networkx_labels(G, pos, font_size=9)
-    nx.draw_networkx_edges(G, pos, arrows=False, connectionstyle="arc3,rad=0.2",
-                           edge_color="#555555", width=1.5)
+        # Layout con Graphviz
+        try:
+            pos = graphviz_layout(G, prog='dot')
+        except:
+            pos = nx.spring_layout(G)
 
-    plt.title("Nivel Jerárquico", fontsize=16)
-    plt.axis('off')
+        # Colores pastel por nivel
+        niveles_unicos = sorted(set(niveles_map.values()))
 
-    # ---------------------------
-    # Guardar imagen en memoria
-    # ---------------------------
-    img = BytesIO()
-    plt.savefig(img, format='png', bbox_inches='tight')
-    plt.close()
-    img.seek(0)
-    graph_base64 = base64.b64encode(img.read()).decode('utf-8')
+        def pastel(h):
+            r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
+            return (r, g, b)
 
-    return render_template('nivel_jerarquico.html', graph_base64=graph_base64)
+        color_map = {
+            nivel: pastel(i / len(niveles_unicos))
+            for i, nivel in enumerate(niveles_unicos)
+        }
+        node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
 
+        # Tamaño proporcional
+        max_size = 2000
+        min_size = 1000
+        nivel_max = max(niveles_unicos)
+        nivel_min = min(niveles_unicos)
+
+        node_sizes = [
+            min_size + (niveles_map[n] - nivel_min) / (nivel_max - nivel_min) * (max_size - min_size)
+            if nivel_max != nivel_min else max_size
+            for n in G.nodes()
+        ]
+
+        # Dibujar
+        plt.figure(figsize=(14, 6))
+        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes)
+        nx.draw_networkx_labels(G, pos, font_size=9)
+        nx.draw_networkx_edges(G, pos, arrows=False, connectionstyle="arc3,rad=0.2",
+                               edge_color="#555555", width=1.5)
+        plt.axis('off')
+
+        # Convertir a PNG base64
+        img = BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight')
+        plt.close()
+        img.seek(0)
+
+        return base64.b64encode(img.read()).decode('utf-8')
+
+    graph_base64 = generar_grafica(personas_dep)
+
+    return render_template(
+        'nivel_jerarquico_dep.html',
+        graph_base64=graph_base64,
+        dep_id=dep_id
+    )
+
+    
 # -----------------------
 # Run App
 # -----------------------
