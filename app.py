@@ -477,6 +477,11 @@ def nivel_jerarquico_dep(dep_id):
         plugins.connect(fig, tooltip)
 
         # Convertir a HTML interactivo
+        import mpld3
+
+        mpld3.urls.MPLD3_URL = "https://raw.githubusercontent.com/mpld3/mpld3/v0.5.7/mpld3/js/mpld3.v0.5.7.min.js"
+        mpld3.urls.D3_URL = "https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"
+
         html_graph = mpld3.fig_to_html(fig)
         plt.close()
 
@@ -491,7 +496,7 @@ def nivel_jerarquico_dep(dep_id):
         dep_id=dep_id
     )
 
-    
+
 # -----------------------
 # Run App
 # -----------------------
