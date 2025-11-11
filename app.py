@@ -532,79 +532,106 @@ def nivel_jerarquico_dep(dep_id):
         return "<p>No hay datos para este departamento.</p>"
 
     # === FUNCIÓN QUE DIBUJA (NO LA MODIFICAMOS) ===
-    def generar_grafica(personas_dep):
-        import matplotlib.pyplot as plt
-        import networkx as nx
-        from networkx.drawing.nx_pydot import graphviz_layout
-        from io import BytesIO
-        import base64
-        import colorsys
+def generar_grafica(personas_dep):
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    from networkx.drawing.nx_pydot import graphviz_layout
+    from io import BytesIO
+    import base64
+    import colorsys
 
-        G = nx.DiGraph()
-        nodos_map = {}
-        niveles_map = {}
+    G = nx.DiGraph()
+    nodos_map = {}
+    niveles_map = {}
 
-        for persona in personas_dep:
-            puesto = puesto_map[persona['id_puesto']]
-            nodo = f"{persona['nombre_completo']}\n({puesto['nombre']})"
-            G.add_node(nodo)
-            nodos_map[persona['id']] = nodo
-            niveles_map[nodo] = puesto['nivel']
+    # --- Determinar nivel mínimo (gestores) ---
+    niveles_todos = [puesto_map[p['id_puesto']]['nivel'] for p in personas_dep]
+    nivel_gestor = min(niveles_todos)   # Aquí será 510
 
-        for persona in personas_dep:
-            if persona.get('id_jefe'):
-                jefe_nodo = nodos_map.get(persona['id_jefe'])
-                if jefe_nodo:
-                    G.add_edge(jefe_nodo, nodos_map[persona['id']])
+    # Lista y conteo de gestores
+    gestores = [p for p in personas_dep if puesto_map[p['id_puesto']]['nivel'] == nivel_gestor]
+    total_gestores = len(gestores)
 
-        try:
-            pos = graphviz_layout(G, prog='dot')
-        except:
-            pos = nx.spring_layout(G)
+    # --- Crear nodos excepto gestores ---
+    for persona in personas_dep:
+        puesto = puesto_map[persona['id_puesto']]
+        nivel = puesto['nivel']
 
-        niveles_unicos = sorted(set(niveles_map.values()))
+        if nivel == nivel_gestor:
+            continue  # saltar gestores individuales
 
-        def pastel(h):
-            r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
-            return (r, g, b)
+        nodo = f"{persona['nombre_completo']}\n({puesto['nombre']})"
+        G.add_node(nodo)
+        nodos_map[persona['id']] = nodo
+        niveles_map[nodo] = nivel
 
-        color_map = {
-            nivel: pastel(i / len(niveles_unicos))
-            for i, nivel in enumerate(niveles_unicos)
-        }
-        node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
+    # --- Nodo agrupado de gestores ---
+    if total_gestores > 0:
+        nodo_gestores = f"Gestores (Total: {total_gestores})"
+        G.add_node(nodo_gestores)
+        niveles_map[nodo_gestores] = nivel_gestor
 
-        max_size = 2000
-        min_size = 1000
-        nivel_max = max(niveles_unicos)
-        nivel_min = min(niveles_unicos)
+    # --- Crear edges ---
+    for persona in personas_dep:
+        puesto = puesto_map[persona['id_puesto']]
+        nivel = puesto['nivel']
 
-        node_sizes = [
-            min_size + (niveles_map[n] - nivel_min) / (nivel_max - nivel_min) * (max_size - min_size)
-            if nivel_max != nivel_min else max_size
-            for n in G.nodes()
-        ]
+        # Gestores → todos conectan su nodo agrupado
+        if nivel == nivel_gestor:
+            if persona.get('id_jefe') and persona['id_jefe'] in nodos_map:
+                jefe_nodo = nodos_map[persona['id_jefe']]
+                G.add_edge(jefe_nodo, nodo_gestores)
+            continue
 
-        plt.figure(figsize=(14, 6))
-        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes)
-        nx.draw_networkx_labels(G, pos, font_size=9)
-        nx.draw_networkx_edges(G, pos, arrows=False,
-                               connectionstyle="arc3,rad=0.2",
-                               edge_color="#555", width=1.5)
-        plt.axis('off')
+        # Otros niveles → normal
+        if persona.get('id_jefe'):
+            jefe_nodo = nodos_map.get(persona['id_jefe'])
+            if jefe_nodo:
+                G.add_edge(jefe_nodo, nodos_map[persona['id']])
 
-        img = BytesIO()
-        plt.savefig(img, format='png', bbox_inches='tight')
-        plt.close()
-        img.seek(0)
+    # --- Layout ---
+    try:
+        pos = graphviz_layout(G, prog='dot')
+    except:
+        pos = nx.spring_layout(G)
 
-        return base64.b64encode(img.read()).decode('utf-8')
+    niveles_unicos = sorted(set(niveles_map.values()))
 
-    graph_base64 = generar_grafica(personas_dep)
+    def pastel(h):
+        r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
+        return (r, g, b)
 
-    return render_template('nivel_jerarquico_dep.html',
-                           graph_base64=graph_base64,
-                           dep_id=dep_id)
+    color_map = {
+        nivel: pastel(i / len(niveles_unicos))
+        for i, nivel in enumerate(niveles_unicos)
+    }
+
+    node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
+
+    max_size = 2000
+    min_size = 1000
+
+    node_sizes = [
+        min_size + (niveles_map[n] - nivel_gestor) / (max(niveles_unicos) - nivel_gestor) * (max_size - min_size)
+        if max(niveles_unicos) != nivel_gestor else max_size
+        for n in G.nodes()
+    ]
+
+    plt.figure(figsize=(14, 6))
+    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes)
+    nx.draw_networkx_labels(G, pos, font_size=9)
+    nx.draw_networkx_edges(G, pos, arrows=False,
+                           connectionstyle="arc3,rad=0.2",
+                           edge_color="#555", width=1.5)
+    plt.axis('off')
+
+    img = BytesIO()
+    plt.savefig(img, format='png', bbox_inches='tight')
+    plt.close()
+    img.seek(0)
+
+    return base64.b64encode(img.read()).decode('utf-8')
+
 
 
 # ===============================================
