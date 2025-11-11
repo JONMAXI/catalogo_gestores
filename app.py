@@ -5,6 +5,8 @@ import plotly.express as px
 import os
 from io import BytesIO
 import base64
+import matplotlib
+matplotlib.use("Agg")
 
 app = Flask(__name__)
 app.secret_key = 'clave_super_secreta'
@@ -488,50 +490,6 @@ def nivel_jerarquico_personas(dep_id):
 # ===============================================
 #   RUTA ORIGINAL DEL ORGANIGRAMA POR DEPARTAMENTO
 # ===============================================
-@app.route('/nivel_jerarquico/<int:dep_id>')
-def nivel_jerarquico_dep(dep_id):
-    import matplotlib.pyplot as plt
-    import networkx as nx
-    from networkx.drawing.nx_pydot import graphviz_layout
-    from io import BytesIO
-    import base64
-    import colorsys
-
-    with get_connection() as conn:
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, nombre, nivel, departamento_id 
-            FROM puesto 
-            WHERE activo = 1
-        """)
-        puestos = cursor.fetchall()
-        puesto_map = {p['id']: p for p in puestos}
-
-        cursor.execute("""
-            SELECT p.id,
-                   CONCAT(p.apellidop,' ',p.apellidom,' ',p.nombres) AS nombre_completo,
-                   ap.id_puesto,
-                   aj.id_jefe
-            FROM persona p
-            JOIN asigna_puesto ap ON p.id = ap.id_persona
-            LEFT JOIN asigna_jefe aj 
-                  ON p.id = aj.id_persona 
-                 AND (aj.fecha_fin IS NULL OR aj.fecha_fin >= CURDATE())
-            WHERE p.estatus != 'Baja'
-        """)
-        personas = cursor.fetchall() or []
-
-    # Filtrar solo el departamento
-    personas_dep = [
-        p for p in personas
-        if puesto_map[p['id_puesto']]['departamento_id'] == dep_id
-    ]
-
-    if not personas_dep:
-        return "<p>No hay datos para este departamento.</p>"
-
-    # === FUNCIÓN QUE DIBUJA (NO LA MODIFICAMOS) ===
 def generar_grafica(personas_dep):
     import matplotlib.pyplot as plt
     import networkx as nx
@@ -541,97 +499,93 @@ def generar_grafica(personas_dep):
     import colorsys
 
     G = nx.DiGraph()
+
+    # ---------- OPTIMIZACIÓN 1 ----------
+    # Generamos localmente la referencia a puesto_map
+    get_puesto = puesto_map.get
+
     nodos_map = {}
     niveles_map = {}
 
-    # --- Determinar nivel mínimo (gestores) ---
-    niveles_todos = [puesto_map[p['id_puesto']]['nivel'] for p in personas_dep]
-    nivel_gestor = min(niveles_todos)   # Aquí será 510
-
-    # Lista y conteo de gestores
-    gestores = [p for p in personas_dep if puesto_map[p['id_puesto']]['nivel'] == nivel_gestor]
-    total_gestores = len(gestores)
-
-    # --- Crear nodos excepto gestores ---
+    # ---------- OPTIMIZACIÓN 2 ----------
+    # Pre-armamos labels y nodos sin concatenar repetidamente
     for persona in personas_dep:
-        puesto = puesto_map[persona['id_puesto']]
-        nivel = puesto['nivel']
+        puesto = get_puesto(persona['id_puesto'])
+        label = f"{persona['nombre_completo']}\n({puesto['nombre']})"
 
-        if nivel == nivel_gestor:
-            continue  # saltar gestores individuales
+        G.add_node(label)
 
-        nodo = f"{persona['nombre_completo']}\n({puesto['nombre']})"
-        G.add_node(nodo)
-        nodos_map[persona['id']] = nodo
-        niveles_map[nodo] = nivel
+        pid = persona['id']
+        nodos_map[pid] = label
+        niveles_map[label] = puesto['nivel']
 
-    # --- Nodo agrupado de gestores ---
-    if total_gestores > 0:
-        nodo_gestores = f"Gestores (Total: {total_gestores})"
-        G.add_node(nodo_gestores)
-        niveles_map[nodo_gestores] = nivel_gestor
-
-    # --- Crear edges ---
+    # ---------- OPTIMIZACIÓN 3 ----------
+    # Insertamos edges sin búsquedas costosas
     for persona in personas_dep:
-        puesto = puesto_map[persona['id_puesto']]
-        nivel = puesto['nivel']
-
-        # Gestores → todos conectan su nodo agrupado
-        if nivel == nivel_gestor:
-            if persona.get('id_jefe') and persona['id_jefe'] in nodos_map:
-                jefe_nodo = nodos_map[persona['id_jefe']]
-                G.add_edge(jefe_nodo, nodo_gestores)
-            continue
-
-        # Otros niveles → normal
-        if persona.get('id_jefe'):
-            jefe_nodo = nodos_map.get(persona['id_jefe'])
+        jefe_id = persona.get("id_jefe")
+        if jefe_id:
+            jefe_nodo = nodos_map.get(jefe_id)
             if jefe_nodo:
                 G.add_edge(jefe_nodo, nodos_map[persona['id']])
 
-    # --- Layout ---
+    # ---------- OPTIMIZACIÓN 4 ----------
+    # Intentar Graphviz (rápido) y fallback a spring_layout
     try:
-        pos = graphviz_layout(G, prog='dot')
+        pos = graphviz_layout(G, prog="dot")
     except:
-        pos = nx.spring_layout(G)
+        pos = nx.spring_layout(G, k=0.55, seed=42)  # mejor calidad y estable
 
+    # ---------- OPTIMIZACIÓN 5 ----------
+    # Pre-asignación de colores por nivel (más rápido)
     niveles_unicos = sorted(set(niveles_map.values()))
+    total_niv = len(niveles_unicos)
 
     def pastel(h):
-        r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
+        r, g, b = colorsys.hls_to_rgb(h, 0.80, 0.60)
         return (r, g, b)
 
     color_map = {
-        nivel: pastel(i / len(niveles_unicos))
+        nivel: pastel(i / total_niv)
         for i, nivel in enumerate(niveles_unicos)
     }
 
     node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
 
-    max_size = 2000
-    min_size = 1000
+    # ---------- OPTIMIZACIÓN 6 ----------
+    # Sizes precomputados (más ligero)
+    n_min, n_max = min(niveles_unicos), max(niveles_unicos)
+    delta = (n_max - n_min) or 1  # evitar división 0
 
+    min_size, max_size = 1000, 2000
     node_sizes = [
-        min_size + (niveles_map[n] - nivel_gestor) / (max(niveles_unicos) - nivel_gestor) * (max_size - min_size)
-        if max(niveles_unicos) != nivel_gestor else max_size
+        min_size + ((niveles_map[n] - n_min) / delta) * (max_size - min_size)
         for n in G.nodes()
     ]
 
-    plt.figure(figsize=(14, 6))
-    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes)
-    nx.draw_networkx_labels(G, pos, font_size=9)
-    nx.draw_networkx_edges(G, pos, arrows=False,
-                           connectionstyle="arc3,rad=0.2",
-                           edge_color="#555", width=1.5)
-    plt.axis('off')
+    # ---------- OPTIMIZACIÓN 7 ----------
+    # Render rápido
+    plt.figure(figsize=(14, 6), dpi=90)
+    nx.draw_networkx(
+        G,
+        pos,
+        with_labels=True,
+        node_color=node_colors,
+        node_size=node_sizes,
+        arrows=False,
+        font_size=9,
+        edge_color="#666",
+        width=1.2,
+        connectionstyle="arc3,rad=0.18"
+    )
+
+    plt.axis("off")
 
     img = BytesIO()
-    plt.savefig(img, format='png', bbox_inches='tight')
+    plt.savefig(img, format="png", bbox_inches="tight")
     plt.close()
     img.seek(0)
 
-    return base64.b64encode(img.read()).decode('utf-8')
-
+    return base64.b64encode(img.read()).decode("utf-8")
 
 
 # ===============================================
@@ -738,9 +692,7 @@ def nivel_jerarquico_colaborador(persona_id):
         plt.figure(figsize=(14, 6))
         nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes)
         nx.draw_networkx_labels(G, pos, font_size=9)
-        nx.draw_networkx_edges(G, pos, arrows=False,
-                               connectionstyle="arc3,rad=0.2",
-                               edge_color="#555", width=1.5)
+        nx.draw_networkx_edges(G, pos, arrows=False)
         plt.axis('off')
 
         img = BytesIO()
@@ -754,6 +706,8 @@ def nivel_jerarquico_colaborador(persona_id):
 
     return render_template('nivel_jerarquico_dep.html',
                            graph_base64=graph_base64)
+
+
 
 # -----------------------
 @app.route('/nivel_jerarquico/colaborador_tabla/<int:persona_id>')
@@ -813,6 +767,8 @@ def nivel_jerarquico_colaborador_tabla(persona_id):
 
     return jsonify(data)
 #------------------------------------------
+
+
 
 # -----------------------
 # Run App

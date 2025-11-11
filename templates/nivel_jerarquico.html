@@ -36,173 +36,142 @@
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 
 <script>
-document.addEventListener("DOMContentLoaded", function() {
-    const depSelect = document.getElementById("depSelect");
-    const personaSelect = document.getElementById("personaSelect");
+document.getElementById("depSelect").addEventListener("change", function() {
+    let dep_id = this.value;
+    let personaSelect = document.getElementById("personaSelect");
+    personaSelect.innerHTML = "<option>Cargando...</option>";
+    personaSelect.disabled = true;
 
-    // --- FUNCIONES ---
-    function cargarPersonas(dep_id) {
-        personaSelect.innerHTML = "<option>Cargando...</option>";
-        personaSelect.disabled = true;
+    document.getElementById("resultado").innerHTML = "";
+    document.getElementById("countPuestos").innerHTML = "";
+    document.getElementById("subordinados").innerHTML = "";
 
-        document.getElementById("resultado").innerHTML = "";
-        document.getElementById("countPuestos").innerHTML = "";
-        document.getElementById("subordinados").innerHTML = "";
+    if (!dep_id) return;
 
-        if (!dep_id) return;
-
-        // 1️⃣ Cargar personas
-        fetch("/nivel_jerarquico/personas/" + dep_id)
-            .then(res => res.json())
-            .then(personas => {
-                personaSelect.innerHTML = "";
-                if (personas.length === 0) {
-                    personaSelect.innerHTML = "<option>No hay personas</option>";
-                    return;
-                }
-                personaSelect.innerHTML = '<option value="">-- Seleccionar --</option>';
-                personas.forEach(p => {
-                    personaSelect.innerHTML += `<option value="${p.id}">${p.nombre}</option>`;
-                });
-                personaSelect.disabled = false;
-
-                // Restaurar persona seleccionada
-                const persona_id = sessionStorage.getItem('persona_id');
-                if (persona_id) {
-                    personaSelect.value = persona_id;
-                    personaSelect.dispatchEvent(new Event('change'));
-                    sessionStorage.removeItem('persona_id'); // usar solo una vez
-                }
+    // 1️⃣ CARGA PERSONAS DEL DEPARTAMENTO
+    fetch("/nivel_jerarquico/personas/" + dep_id)
+        .then(res => res.json())
+        .then(personas => {
+            personaSelect.innerHTML = "";
+            if (personas.length === 0) {
+                personaSelect.innerHTML = "<option>No hay personas</option>";
+                return;
+            }
+            personaSelect.innerHTML = '<option value="">-- Seleccionar --</option>';
+            personas.forEach(p => {
+                personaSelect.innerHTML += `<option value="${p.id}">${p.nombre}</option>`;
             });
+            personaSelect.disabled = false;
+        });
 
-        // 2️⃣ Cargar count de puestos
-        fetch("/nivel_jerarquico/count/" + dep_id)
-            .then(res => res.json())
-            .then(data => {
-                if (!data || data.length === 0) {
-                    document.getElementById("countPuestos").innerHTML =
-                        "<p class='text-muted'>No hay información de puestos.</p>";
-                    return;
-                }
-                let html = `
-                    <h4 class="mt-4">Resumen por Puesto</h4>
-                    <table class="table table-bordered table-sm mt-2">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Puesto</th>
-                                <th>Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-                data.forEach(row => {
-                    html += `<tr><td>${row.puesto}</td><td><strong>${row.total_empleados}</strong></td></tr>`;
-                });
-                html += `</tbody></table>`;
-                document.getElementById("countPuestos").innerHTML = html;
-            });
-    }
-
-    function cargarOrganigrama(persona_id) {
-        if (!persona_id) return;
-
-        // Guardar persona seleccionada
-        sessionStorage.setItem('persona_id', persona_id);
-
-        // Organigrama
-        fetch("/nivel_jerarquico/colaborador/" + persona_id)
-            .then(res => res.text())
-            .then(html => {
-                document.getElementById("resultado").innerHTML = html;
-            });
-
-        // Tabla de subordinados
-        fetch("/nivel_jerarquico/colaborador_tabla/" + persona_id)
-            .then(res => res.json())
-            .then(data => {
-                if (!data || data.length === 0) {
-                    document.getElementById("subordinados").innerHTML =
-                        "<p class='text-muted'>No hay empleados bajo esta persona.</p>";
-                    return;
-                }
-
-                let html = `
-                    <h4 class="mt-4">Empleados bajo ${personaSelect.options[personaSelect.selectedIndex].text}</h4>
-                    <div class="table-wrapper">
-                    <table id="subordinadosTable" class="table table-striped table-bordered table-hover">
-                        <thead class="table-dark">
-                            <tr>
-                                <th>Nombre Completo</th>
-                                <th>Departamento</th>
-                                <th>Puesto</th>
-                                <th>Estatus</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-
-                data.forEach(p => {
-                    html += `
+    // 2️⃣ CARGA COUNT DE PUESTOS
+    fetch("/nivel_jerarquico/count/" + dep_id)
+        .then(res => res.json())
+        .then(data => {
+            if (!data || data.length === 0) {
+                document.getElementById("countPuestos").innerHTML =
+                    "<p class='text-muted'>No hay información de puestos.</p>";
+                return;
+            }
+            let html = `
+                <h4 class="mt-4">Resumen por Puesto</h4>
+                <table class="table table-bordered table-sm mt-2">
+                    <thead class="table-light">
                         <tr>
-                            <td>${p.nombre_completo}</td>
-                            <td>${p.departamento || ''}</td>
-                            <td>${p.puesto || ''}</td>
-                            <td>${p.estatus || ''}</td>
-                            <td>
-                                <a href="/editar_persona_arbol/${p.id}" class="btn btn-sm btn-warning mb-1" title="Editar">
-                                    <i class="fa-solid fa-pen-to-square"></i>
-                                </a>
-                                <a href="/documentacion_persona/${p.id}" class="btn btn-sm btn-info mb-1" title="Documentación">
-                                    <i class="fa-solid fa-file"></i>
-                                </a>
-                                ${p.estatus !== 'Baja' ? `
-                                <a href="/baja_persona/${p.id}" class="btn btn-sm btn-danger mb-1" title="Dar de Baja">
-                                    <i class="fa-solid fa-user-slash"></i>
-                                </a>` : ''}
-                            </td>
+                            <th>Puesto</th>
+                            <th>Total</th>
                         </tr>
-                    `;
-                });
-
-                html += `</tbody></table></div>`;
-                document.getElementById("subordinados").innerHTML = html;
-
-                $('#subordinadosTable').DataTable({
-                    "language": {
-                        "search": "Buscar:",
-                        "lengthMenu": "Mostrar _MENU_ registros",
-                        "info": "Mostrando _START_ a _END_ de _TOTAL_ registros",
-                        "paginate": {
-                            "first": "Primero",
-                            "last": "Último",
-                            "next": "Siguiente",
-                            "previous": "Anterior"
-                        }
-                    },
-                    "pageLength": 10
-                });
+                    </thead>
+                    <tbody>
+            `;
+            data.forEach(row => {
+                html += `<tr><td>${row.puesto}</td><td><strong>${row.total_empleados}</strong></td></tr>`;
             });
-    }
+            html += `</tbody></table>`;
+            document.getElementById("countPuestos").innerHTML = html;
+        });
+});
 
-    // --- EVENTOS ---
-    depSelect.addEventListener("change", function() {
-        const dep_id = this.value;
-        sessionStorage.setItem('dep_id', dep_id);
-        cargarPersonas(dep_id);
-    });
+// 3️⃣ CARGA ORGANIGRAMA Y TABLA DE SUBORDINADOS
+document.getElementById("personaSelect").addEventListener("change", function() {
+    let persona_id = this.value;
+    if (!persona_id) return;
 
-    personaSelect.addEventListener("change", function() {
-        const persona_id = this.value;
-        cargarOrganigrama(persona_id);
-    });
+    // Cargar organigrama
+    fetch("/nivel_jerarquico/colaborador/" + persona_id)
+        .then(res => res.text())
+        .then(html => {
+            document.getElementById("resultado").innerHTML = html;
+        });
 
-    // --- CARGAR ESTADO AL INICIAR ---
-    const dep_id_guardado = sessionStorage.getItem('dep_id');
-    if (dep_id_guardado) {
-        depSelect.value = dep_id_guardado;
-        cargarPersonas(dep_id_guardado);
-    }
+    // Cargar tabla de subordinados
+    fetch("/nivel_jerarquico/colaborador_tabla/" + persona_id)
+        .then(res => res.json())
+        .then(data => {
+            if (!data || data.length === 0) {
+                document.getElementById("subordinados").innerHTML =
+                    "<p class='text-muted'>No hay empleados bajo esta persona.</p>";
+                return;
+            }
+
+            let html = `
+                <h4 class="mt-4">Empleados bajo ${this.options[this.selectedIndex].text}</h4>
+                <div class="table-wrapper">
+                <table id="subordinadosTable" class="table table-striped table-bordered table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Nombre Completo</th>
+                            <th>Departamento</th>
+                            <th>Puesto</th>
+                            <th>Estatus</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            data.forEach(p => {
+                html += `
+                    <tr>
+                        <td>${p.nombre_completo}</td>
+                        <td>${p.departamento || ''}</td>
+                        <td>${p.puesto || ''}</td>
+                        <td>${p.estatus || ''}</td>
+                        <td>
+                            <a href="/editar_persona/${p.id}" class="btn btn-sm btn-warning mb-1" title="Editar">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </a>
+                            <a href="/documentacion_persona/${p.id}" class="btn btn-sm btn-info mb-1" title="Documentación">
+                                <i class="fa-solid fa-file"></i>
+                            </a>
+                            ${p.estatus !== 'Baja' ? `
+                            <a href="/baja_persona/${p.id}" class="btn btn-sm btn-danger mb-1" title="Dar de Baja">
+                                <i class="fa-solid fa-user-slash"></i>
+                            </a>` : ''}
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `</tbody></table></div>`;
+            document.getElementById("subordinados").innerHTML = html;
+
+            // Inicializar DataTable
+            $('#subordinadosTable').DataTable({
+                "language": {
+                    "search": "Buscar:",
+                    "lengthMenu": "Mostrar _MENU_ registros",
+                    "info": "Mostrando _START_ a _END_ de _TOTAL_ registros",
+                    "paginate": {
+                        "first": "Primero",
+                        "last": "Último",
+                        "next": "Siguiente",
+                        "previous": "Anterior"
+                    }
+                },
+                "pageLength": 10
+            });
+        });
 });
 </script>
 {% endblock %}
