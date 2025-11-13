@@ -23,13 +23,13 @@
 <!-- Resumen por puesto -->
 <div id="countPuestos" class="mt-4"></div>
 
-<!-- Organigrama del colaborador -->
+<!-- Organigrama -->
 <div id="resultado" class="mt-4"></div>
 
-<!-- Tabla de subordinados -->
+<!-- Tabla -->
 <div id="subordinados" class="mt-4"></div>
 
-<!-- jQuery y DataTables -->
+<!-- jQuery + DataTables -->
 <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
@@ -48,7 +48,7 @@ document.getElementById("depSelect").addEventListener("change", function() {
 
     if (!dep_id) return;
 
-    // 1️⃣ CARGA PERSONAS DEL DEPARTAMENTO
+    // 1️⃣ Personas del departamento
     fetch("/nivel_jerarquico/personas/" + dep_id)
         .then(res => res.json())
         .then(personas => {
@@ -64,7 +64,7 @@ document.getElementById("depSelect").addEventListener("change", function() {
             personaSelect.disabled = false;
         });
 
-    // 2️⃣ CARGA COUNT DE PUESTOS
+    // 2️⃣ Conteo por puesto
     fetch("/nivel_jerarquico/count/" + dep_id)
         .then(res => res.json())
         .then(data => {
@@ -92,19 +92,17 @@ document.getElementById("depSelect").addEventListener("change", function() {
         });
 });
 
-// 3️⃣ CARGA ORGANIGRAMA Y TABLA DE SUBORDINADOS
+// 3️⃣ Carga organigrama y tabla subordinados
 document.getElementById("personaSelect").addEventListener("change", function() {
     let persona_id = this.value;
     if (!persona_id) return;
 
-    // Cargar organigrama
+    // Organigrama
     fetch("/nivel_jerarquico/colaborador/" + persona_id)
         .then(res => res.text())
-        .then(html => {
-            document.getElementById("resultado").innerHTML = html;
-        });
+        .then(html => document.getElementById("resultado").innerHTML = html);
 
-    // Cargar tabla de subordinados
+    // Tabla subordinados
     fetch("/nivel_jerarquico/colaborador_tabla/" + persona_id)
         .then(res => res.json())
         .then(data => {
@@ -114,29 +112,55 @@ document.getElementById("personaSelect").addEventListener("change", function() {
                 return;
             }
 
-            let html = `
-                <h4 class="mt-4">Empleados bajo ${this.options[this.selectedIndex].text}</h4>
-                <div class="table-wrapper">
-                <table id="subordinadosTable" class="table table-striped table-bordered table-hover">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Nombre Completo</th>
-                            <th>Departamento</th>
-                            <th>Puesto</th>
-                            <th>Estatus</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+            // 🔹 Filtros
+            const puestos = [...new Set(data.map(p => p.puesto).filter(Boolean))].sort();
+            let filtrosHTML = `
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label><strong>Filtrar por Puesto:</strong></label>
+                        <select id="filtroPuesto" class="form-control">
+                            <option value="">-- Todos --</option>
+                            ${puestos
+                                .filter(p => p !== 'Gestor 1-7')  // <-- Excluye "Gestor 1-7"
+                                .map(p => `<option value="${p}">${p}</option>`)
+                                .join("")}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label><strong>Filtrar por Colaborador:</strong></label>
+                        <select id="filtroColaborador" class="form-control" disabled>
+                            <option value="">-- Selecciona un puesto --</option>
+                        </select>
+                    </div>
+                </div>
             `;
 
+            // 🔹 Tabla
+            let tablaHTML = `
+                <div class="table-wrapper">
+                    <table id="subordinadosTable" class="table table-striped table-bordered table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Nombre Completo</th>
+                                <th>Departamento</th>
+                                <th>Puesto</th>
+                                <th>Estatus</th>
+                                <th>Nombre Jefe</th>
+                                <th>Puesto Jefe</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
             data.forEach(p => {
-                html += `
+                tablaHTML += `
                     <tr>
                         <td>${p.nombre_completo}</td>
                         <td>${p.departamento || ''}</td>
                         <td>${p.puesto || ''}</td>
                         <td>${p.estatus || ''}</td>
+                        <td>${p.nombre_jefe || ''}</td>
+                        <td>${p.puesto_jefe || ''}</td>
                         <td>
                             <a href="/editar_persona/${p.id}" class="btn btn-sm btn-warning mb-1" title="Editar">
                                 <i class="fa-solid fa-pen-to-square"></i>
@@ -152,12 +176,17 @@ document.getElementById("personaSelect").addEventListener("change", function() {
                     </tr>
                 `;
             });
+            tablaHTML += `</tbody></table></div>`;
 
-            html += `</tbody></table></div>`;
-            document.getElementById("subordinados").innerHTML = html;
+            // 🔹 Mostrar todo
+            document.getElementById("subordinados").innerHTML = `
+                <h4 class="mt-4">Empleados bajo ${this.options[this.selectedIndex].text}</h4>
+                ${filtrosHTML}
+                ${tablaHTML}
+            `;
 
-            // Inicializar DataTable
-            $('#subordinadosTable').DataTable({
+            // DataTable
+            const table = $('#subordinadosTable').DataTable({
                 "language": {
                     "search": "Buscar:",
                     "lengthMenu": "Mostrar _MENU_ registros",
@@ -170,6 +199,45 @@ document.getElementById("personaSelect").addEventListener("change", function() {
                     }
                 },
                 "pageLength": 10
+            });
+
+            // 🔹 Filtro por puesto
+            $('#filtroPuesto').on('change', function() {
+                const puesto = $(this).val();
+                table.columns(5).search(puesto).draw();
+
+                const colaboradorSelect = $('#filtroColaborador');
+                colaboradorSelect.html('');
+                if (!puesto) {
+                    colaboradorSelect.html('<option value="">-- Selecciona un puesto --</option>');
+                    colaboradorSelect.prop('disabled', true);
+                    return;
+                }
+
+                const colaboradores = [...new Set(data
+                    .filter(p => p.puesto === puesto)
+                    .map(p => p.nombre_completo)
+                    .filter(Boolean)
+                )].sort();
+
+                colaboradorSelect.html('<option value="">-- Todos --</option>');
+                colaboradores.forEach(nombre => {
+                    colaboradorSelect.append(`<option value="${nombre}">${nombre}</option>`);
+                });
+                colaboradorSelect.prop('disabled', false);
+            });
+
+            // 🔹 Filtro por colaborador (Nombre Jefe)
+            $('#filtroColaborador').on('change', function() {
+                const nombreSeleccionado = $(this).val();
+
+                if (!nombreSeleccionado) {
+                    table.columns(4).search('').draw();
+                    return;
+                }
+
+                // Coincidencia exacta con el campo "Nombre Jefe"
+                table.columns(4).search('^' + nombreSeleccionado + '$', true, false).draw();
             });
         });
 });

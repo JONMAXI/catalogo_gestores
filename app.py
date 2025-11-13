@@ -48,7 +48,7 @@ def index():
                 'nombres': row['nombres'],
                 'apellidop': row['apellidop'],
                 'apellidom': row['apellidom'],
-                'nombre_completo': f"{row['apellidop']} {row['apellidom']} {row['nombres']}",
+                'nombre_completo': f"{row['nombres']} {row['apellidop']} {row['apellidom']}",
                 'correo': row['correo'],
                 'numero_empleado': row['numero_empleado'],
                 'estatus': row['estatus'],
@@ -449,27 +449,35 @@ def nivel_jerarquico():
     return render_template('nivel_jerarquico.html', departamentos=departamentos)
 
 
-# ===============================================
+# =====================================================================================================================================================================================
 #   RUTA: OBTENER PERSONAS DE MAYOR RANGO
-# ===============================================
+# ======================================================================================================================================
 @app.route('/nivel_jerarquico/personas/<int:dep_id>')
 def nivel_jerarquico_personas(dep_id):
     with get_connection() as conn:
         cursor = conn.cursor()
 
+        print(f"🔍 Consultando personas de mayor rango del departamento ID: {dep_id}")
+
         # Puestos del departamento
         cursor.execute("""
             SELECT id, nombre, nivel
             FROM puesto
-            WHERE activo = 1 AND departamento_id = %s
+            WHERE activo = 1 AND nombre != 'Gestor 1-7' AND departamento_id = %s
         """, (dep_id,))
         puestos = cursor.fetchall()
 
+        print(f"📋 Puestos encontrados: {len(puestos)}")
+
         if not puestos:
+            print("⚠️ No hay puestos activos en este departamento.")
             return jsonify([])
 
         nivel_max = max(p['nivel'] for p in puestos)
         puestos_top = [p['id'] for p in puestos if p['nivel'] == nivel_max]
+
+        print(f"🏆 Nivel jerárquico más alto: {nivel_max}")
+        print(f"🧩 Puestos top IDs: {puestos_top}")
 
         # Personas que ocupan esos puestos
         cursor.execute("""
@@ -484,108 +492,10 @@ def nivel_jerarquico_personas(dep_id):
 
         personas_top = cursor.fetchall()
 
+        print(f"👤 Personas de mayor rango encontradas: {len(personas_top)}")
+
     return jsonify(personas_top)
 
-
-# ===============================================
-#   RUTA ORIGINAL DEL ORGANIGRAMA POR DEPARTAMENTO
-# ===============================================
-def generar_grafica(personas_dep):
-    import matplotlib.pyplot as plt
-    import networkx as nx
-    from networkx.drawing.nx_pydot import graphviz_layout
-    from io import BytesIO
-    import base64
-    import colorsys
-
-    G = nx.DiGraph()
-
-    # ---------- OPTIMIZACIÓN 1 ----------
-    # Generamos localmente la referencia a puesto_map
-    get_puesto = puesto_map.get
-
-    nodos_map = {}
-    niveles_map = {}
-
-    # ---------- OPTIMIZACIÓN 2 ----------
-    # Pre-armamos labels y nodos sin concatenar repetidamente
-    for persona in personas_dep:
-        puesto = get_puesto(persona['id_puesto'])
-        label = f"{persona['nombre_completo']}\n({puesto['nombre']})"
-
-        G.add_node(label)
-
-        pid = persona['id']
-        nodos_map[pid] = label
-        niveles_map[label] = puesto['nivel']
-
-    # ---------- OPTIMIZACIÓN 3 ----------
-    # Insertamos edges sin búsquedas costosas
-    for persona in personas_dep:
-        jefe_id = persona.get("id_jefe")
-        if jefe_id:
-            jefe_nodo = nodos_map.get(jefe_id)
-            if jefe_nodo:
-                G.add_edge(jefe_nodo, nodos_map[persona['id']])
-
-    # ---------- OPTIMIZACIÓN 4 ----------
-    # Intentar Graphviz (rápido) y fallback a spring_layout
-    try:
-        pos = graphviz_layout(G, prog="dot")
-    except:
-        pos = nx.spring_layout(G, k=0.55, seed=42)  # mejor calidad y estable
-
-    # ---------- OPTIMIZACIÓN 5 ----------
-    # Pre-asignación de colores por nivel (más rápido)
-    niveles_unicos = sorted(set(niveles_map.values()))
-    total_niv = len(niveles_unicos)
-
-    def pastel(h):
-        r, g, b = colorsys.hls_to_rgb(h, 0.80, 0.60)
-        return (r, g, b)
-
-    color_map = {
-        nivel: pastel(i / total_niv)
-        for i, nivel in enumerate(niveles_unicos)
-    }
-
-    node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
-
-    # ---------- OPTIMIZACIÓN 6 ----------
-    # Sizes precomputados (más ligero)
-    n_min, n_max = min(niveles_unicos), max(niveles_unicos)
-    delta = (n_max - n_min) or 1  # evitar división 0
-
-    min_size, max_size = 1000, 2000
-    node_sizes = [
-        min_size + ((niveles_map[n] - n_min) / delta) * (max_size - min_size)
-        for n in G.nodes()
-    ]
-
-    # ---------- OPTIMIZACIÓN 7 ----------
-    # Render rápido
-    plt.figure(figsize=(14, 6), dpi=90)
-    nx.draw_networkx(
-        G,
-        pos,
-        with_labels=True,
-        node_color=node_colors,
-        node_size=node_sizes,
-        arrows=False,
-        font_size=9,
-        edge_color="#666",
-        width=1.2,
-        connectionstyle="arc3,rad=0.18"
-    )
-
-    plt.axis("off")
-
-    img = BytesIO()
-    plt.savefig(img, format="png", bbox_inches="tight")
-    plt.close()
-    img.seek(0)
-
-    return base64.b64encode(img.read()).decode("utf-8")
 
 
 # ===============================================
@@ -599,13 +509,20 @@ def nivel_jerarquico_colaborador(persona_id):
     from io import BytesIO
     import base64
     import colorsys
+    import time
+
+    print("\n" + "="*60)
+    print(f"📊 [INICIO] Generando organigrama desde colaborador ID: {persona_id}")
+    inicio = time.time()
 
     with get_connection() as conn:
         cursor = conn.cursor()
 
+        print("🔍 Consultando personas y relaciones jerárquicas...")
         cursor.execute("""
             SELECT p.id,
-                   CONCAT(p.nombres, ' ', p.apellidop) AS nombre_completo,
+                   p.nombres,
+                   p.apellidop,
                    ap.id_puesto,
                    aj.id_jefe
             FROM persona p
@@ -616,26 +533,32 @@ def nivel_jerarquico_colaborador(persona_id):
             WHERE p.estatus != 'Baja'
         """)
         personas = cursor.fetchall()
+        print(f"✅ Personas activas obtenidas: {len(personas)}")
 
         cursor.execute("SELECT id, nombre, nivel FROM puesto")
         puestos = cursor.fetchall()
+        print(f"✅ Puestos cargados: {len(puestos)}")
+
         puesto_map = {p['id']: p for p in puestos}
 
     # Encontrar subárbol empezando en persona_id
+    print("🌳 Construyendo subárbol jerárquico...")
     hijos = []
     pendientes = [persona_id]
 
     while pendientes:
         actual = pendientes.pop(0)
         hijos.append(actual)
-
         for p in personas:
             if p.get('id_jefe') == actual:
                 pendientes.append(p['id'])
 
     personas_filtradas = [p for p in personas if p['id'] in hijos]
+    print(f"✅ Subárbol construido con {len(personas_filtradas)} personas.\n")
 
-    # Reutilizar tu misma función sin cambiar nada
+    # ---------------------------------------------------
+    # REUTILIZAR LA FUNCIÓN DE GENERAR GRÁFICA
+    # ---------------------------------------------------
     def generar_grafica(personas_dep):
         import matplotlib.pyplot as plt
         import networkx as nx
@@ -644,29 +567,61 @@ def nivel_jerarquico_colaborador(persona_id):
         import base64
         import colorsys
 
+        print("🎨 [GRAFICANDO] Iniciando render del organigrama...")
         G = nx.DiGraph()
         nodos_map = {}
         niveles_map = {}
 
         for persona in personas_dep:
-            puesto = puesto_map[persona['id_puesto']]
-            nodo = f"{persona['nombre_completo']}\n({puesto['nombre']})"
+            puesto = puesto_map.get(persona['id_puesto'])
+            if not puesto:
+                print(f"⚠️ Puesto no encontrado para persona ID {persona['id']}")
+                continue
+           # Agregar gestores_count al nodo solo si hay gestores bajo este jefe
+            # Crear nodo principal del jefe
+            nodo = f"{persona['nombres']}\n{persona['apellidop']}\n({puesto['nombre']})"
             G.add_node(nodo)
             nodos_map[persona['id']] = nodo
             niveles_map[nodo] = puesto['nivel']
 
+            # --- NUEVO: agregar nodo de Gestores ---
+            # --- NUEVO: agregar nodo de Gestores ---
+            count = persona.get('gestores_count', 0)
+            if count > 0:
+                # ID único para que cada jefe tenga su propio nodo de gestores
+                nodo_gestores_id = f"gestores_{persona['id']}"
+                # Etiqueta visual del nodo (lo que se mostrará en la gráfica)
+                etiqueta_gestores = f"{count} Gestores"
+                
+                # Crear nodo único pero con etiqueta visible igual
+                G.add_node(nodo_gestores_id, label=etiqueta_gestores)
+                niveles_map[nodo_gestores_id] = puesto['nivel'] + 0.5
+                G.add_edge(nodo, nodo_gestores_id)
+
+
+        print(f"✅ Nodos creados: {len(G.nodes())}")
+
+        relaciones = 0
         for persona in personas_dep:
             if persona.get('id_jefe'):
                 jefe_nodo = nodos_map.get(persona['id_jefe'])
                 if jefe_nodo:
                     G.add_edge(jefe_nodo, nodos_map[persona['id']])
+                    relaciones += 1
 
+        print(f"🧩 Relaciones jerárquicas detectadas: {relaciones}")
+
+        # Intentar con graphviz primero
         try:
             pos = graphviz_layout(G, prog='dot')
-        except:
+            print("✅ Layout generado con Graphviz.")
+        except Exception as e:
+            print(f"⚠️ Error con Graphviz ({e}), usando spring_layout...")
             pos = nx.spring_layout(G)
+            print("✅ Layout alternativo generado con spring_layout.")
 
         niveles_unicos = sorted(set(niveles_map.values()))
+        print(f"🌈 Niveles jerárquicos detectados: {len(niveles_unicos)}")
 
         def pastel(h):
             r, g, b = colorsys.hls_to_rgb(h, 0.8, 0.6)
@@ -676,13 +631,20 @@ def nivel_jerarquico_colaborador(persona_id):
             nivel: pastel(i / len(niveles_unicos))
             for i, nivel in enumerate(niveles_unicos)
         }
-        node_colors = [color_map[niveles_map[n]] for n in G.nodes()]
+        # Define un color fijo para todos los nodos "gestores"
+        color_gestores = (0.95, 0.90, 0.65)  # tono beige claro, puedes cambiarlo
+
+        node_colors = []
+        for n in G.nodes():
+            if str(n).startswith("gestores_"):
+                node_colors.append(color_gestores)
+            else:
+                node_colors.append(color_map[niveles_map[n]])
 
         max_size = 2000
         min_size = 1000
         nivel_max = max(niveles_unicos)
         nivel_min = min(niveles_unicos)
-
         node_sizes = [
             min_size + (niveles_map[n] - nivel_min) / (nivel_max - nivel_min) * (max_size - min_size)
             if nivel_max != nivel_min else max_size
@@ -691,7 +653,8 @@ def nivel_jerarquico_colaborador(persona_id):
 
         plt.figure(figsize=(14, 6))
         nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=node_sizes)
-        nx.draw_networkx_labels(G, pos, font_size=9)
+        labels = {n: G.nodes[n].get('label', n) for n in G.nodes()}
+        nx.draw_networkx_labels(G, pos, labels=labels, font_size=7)
         nx.draw_networkx_edges(G, pos, arrows=False)
         plt.axis('off')
 
@@ -700,12 +663,44 @@ def nivel_jerarquico_colaborador(persona_id):
         plt.close()
         img.seek(0)
 
+        print("✅ Imagen del organigrama generada correctamente.\n")
         return base64.b64encode(img.read()).decode('utf-8')
 
-    graph_base64 = generar_grafica(personas_filtradas)
+    from collections import defaultdict
+    import copy
+
+    # Crear copia para no alterar el original
+    personas_filtradas_pre = copy.deepcopy(personas_filtradas)
+
+    # Contar gestores por jefe
+    gestores_count = defaultdict(int)
+    for p in personas_filtradas_pre:
+        if p['id_puesto'] == 25 and p.get('id_jefe'):
+            gestores_count[p['id_jefe']] += 1
+
+    # Marcar jefes con la cantidad de gestores
+    for p in personas_filtradas_pre:
+        count = gestores_count.get(p['id'], 0)
+        if count > 0:
+            # Agregar campo extra para mostrar en la etiqueta del nodo
+            p['gestores_count'] = count
+        else:
+            p['gestores_count'] = 0
+
+    # Eliminar los nodos individuales de los gestores para que no se dibujen
+    personas_filtradas_pre = [p for p in personas_filtradas_pre if p['id_puesto'] != 25]
+
+    # Ahora pasas personas_filtradas_pre a tu función original
+    graph_base64 = generar_grafica(personas_filtradas_pre)
+
+
+    fin = time.time()
+    print(f"⏱️ [FIN] Organigrama del colaborador ID {persona_id} generado en {fin - inicio:.2f} segundos.")
+    print("="*60 + "\n")
 
     return render_template('nivel_jerarquico_dep.html',
                            graph_base64=graph_base64)
+
 
 
 
@@ -724,13 +719,28 @@ def nivel_jerarquico_colaborador_tabla(persona_id):
             SELECT p.id, p.nombres, p.apellidop, p.apellidom, p.correo, p.numero_empleado,
                    p.estatus, p.telefono_uno, p.telefono_dos, 
                    pu.id AS id_puesto, pu.nombre AS puesto, pu.departamento_id,
-                   aj.id_jefe, dep.nombre as departamento
+                   aj.id_jefe, dep.nombre as departamento,
+                   CONCAT(j.nombres, ' ', j.apellidop, ' ', j.apellidom) AS nombre_jefe,
+                   pu_jefe.nombre AS puesto_jefe
             FROM persona p
-            JOIN asigna_puesto ap ON ap.id_persona = p.id AND ap.activo=1
-            LEFT JOIN puesto pu ON pu.id = ap.id_puesto
-            LEFT JOIN departamento dep ON dep.id = pu.departamento_id
-            LEFT JOIN asigna_jefe aj ON aj.id_persona = p.id AND (aj.fecha_fin IS NULL OR aj.fecha_fin >= CURDATE())
-            WHERE p.estatus != 'Baja'
+            JOIN asigna_puesto ap 
+                ON ap.id_persona = p.id 
+                AND ap.activo = 1
+            LEFT JOIN puesto pu 
+                ON pu.id = ap.id_puesto
+            LEFT JOIN departamento dep 
+                ON dep.id = pu.departamento_id
+            LEFT JOIN asigna_jefe aj 
+                ON aj.id_persona = p.id 
+                AND (aj.fecha_fin IS NULL OR aj.fecha_fin >= CURDATE())
+            LEFT JOIN persona j 
+                ON j.id = aj.id_jefe
+            LEFT JOIN asigna_puesto ap_jefe 
+                ON ap_jefe.id_persona = j.id 
+                AND ap_jefe.activo = 1
+            LEFT JOIN puesto pu_jefe 
+                ON pu_jefe.id = ap_jefe.id_puesto
+            WHERE p.estatus != 'Baja';
         """)
         personas = cursor.fetchall()
 
@@ -751,19 +761,24 @@ def nivel_jerarquico_colaborador_tabla(persona_id):
     data = []
     for p in filtrados:
         data.append({
-            'id': p['id'],
-            'nombres': p['nombres'],
-            'apellidop': p['apellidop'],
-            'apellidom': p['apellidom'],
-            'nombre_completo': f"{p['apellidop']} {p['apellidom']} {p['nombres']}",
-            'correo': p['correo'],
-            'numero_empleado': p['numero_empleado'],
-            'estatus': p['estatus'],
-            'telefono_uno': p['telefono_uno'],
-            'telefono_dos': p['telefono_dos'],
-            'puesto': p['puesto'] or '',
-            'departamento': p['departamento']
-        })
+        'id': p['id'],
+        'nombres': p['nombres'],
+        'apellidop': p['apellidop'],
+        'apellidom': p['apellidom'],
+        'nombre_completo': f"{p['nombres']} {p['apellidop']} {p['apellidom']}",
+        'numero_empleado': p['numero_empleado'],
+        'estatus': p['estatus'],
+        
+        # ✅ Datos necesarios para los filtros
+        'puesto_id': p['id_puesto'],               # <-- Filtro Puesto
+        'puesto': p['puesto'] or '',
+        'departamento_id': p['departamento_id'],   # <-- si lo necesitas
+        'jefe_id': p['id_jefe'],                   # <-- Filtro Gestor / Jefe
+        'departamento': p['departamento'],
+        'nombre_jefe': p['nombre_jefe'],
+        'puesto_jefe': p['puesto_jefe']
+
+    })
 
     return jsonify(data)
 #------------------------------------------
