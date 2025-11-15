@@ -210,13 +210,17 @@ def editar_persona(persona_id):
                                (persona_id, puesto_id))
                 conn.commit()
 
-            # Actualizar jefe
-            cursor.execute("UPDATE asigna_jefe SET fecha_fin=CURDATE() WHERE id_persona=%s AND fecha_fin IS NULL",
-                           (persona_id,))
+           # Eliminar todas las asignaciones anteriores
+            cursor.execute("DELETE FROM asigna_jefe WHERE id_persona=%s", (persona_id,))
+
+            # Insertar la nueva relación si existe jefe_id
             if jefe_id:
-                cursor.execute("INSERT INTO asigna_jefe (id_persona, id_jefe, fecha_inicio) VALUES (%s, %s, CURDATE())",
-                               (persona_id, jefe_id))
-                conn.commit()
+                cursor.execute("""
+                    INSERT INTO asigna_jefe (id_persona, id_jefe, fecha_inicio) 
+                    VALUES (%s, %s, CURDATE())
+                """, (persona_id, jefe_id))
+
+            conn.commit()
 
             flash("Persona actualizada correctamente.", "success")
             return redirect(url_for('index'))
