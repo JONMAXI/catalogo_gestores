@@ -29,6 +29,12 @@
           <a href="{{ url_for('documentacion_persona', persona_id=persona.id) }}" class="btn btn-sm btn-info mb-1" title="Documentación">
             <i class="fa-solid fa-file"></i>
           </a>
+          <!-- Botón Registrar Ausencia -->
+          <a href="{{ url_for('ver_ausencias_persona', persona_id=persona.id) }}" 
+             class="btn btn-sm btn-warning mb-1" 
+             title="Registrar ausencia">
+              <i class="fa-solid fa-person-circle-minus"></i>
+          </a>
           {% if persona.estatus != 'Baja' %}
           <a href="{{ url_for('baja_persona', persona_id=persona.id) }}" class="btn btn-sm btn-danger mb-1" title="Dar de Baja">
             <i class="fa-solid fa-user-slash"></i>

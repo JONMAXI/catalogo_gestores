@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>Registrar ausencia{% if persona %} - {{ persona.nombres }} {{ persona.apellidop }}{% endif %}</h3>
+
+<form method="post">
+  <input type="hidden" name="id_persona" value="{{ persona.id if persona else '' }}">
+
+  <div class="form-group">
+    <label>Persona</label>
+    {% if persona %}
+      <div class="form-control">{{ persona.nombres }} {{ persona.apellidop }} {{ persona.apellidom }}</div>
+    {% else %}
+      <select name="id_persona" class="form-control" required>
+        <!-- Si quieres, en el servidor puedes pasar una lista de personas activas -->
+      </select>
+    {% endif %}
+  </div>
+
+  <div class="form-group">
+    <label>Razón</label>
+    <select name="id_razon" class="form-control" required>
+      <option value="">-- Seleccionar --</option>
+      {% for r in razones %}
+        <option value="{{ r['id'] }}">{{ r['nombre'] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label>Descripción (opcional)</label>
+    <textarea name="descripcion" class="form-control"></textarea>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group col-md-6">
+      <label>Fecha inicio</label>
+      <input type="datetime-local" name="fecha_inicio" class="form-control" required>
+    </div>
+    <div class="form-group col-md-6">
+      <label>Fecha fin</label>
+      <input type="datetime-local" name="fecha_fin" class="form-control" required>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" type="submit">Registrar ausencia</button>
+  <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancelar</a>
+</form>
+{% endblock %}

@@ -145,6 +145,9 @@ def registrar_persona():
 # -----------------------
 # Editar Persona
 # -----------------------
+# -----------------------
+# Editar Persona
+# -----------------------
 @app.route('/editar_persona/<int:persona_id>', methods=['GET','POST'])
 def editar_persona(persona_id):
     with get_connection() as conn:
@@ -154,11 +157,11 @@ def editar_persona(persona_id):
         cursor.execute("SELECT id, nombre FROM departamento WHERE activo=1 ORDER BY nombre")
         departamentos = cursor.fetchall()
 
-        # Traer todos los puestos activos con depto y nivel
+        # Traer todos los puestos activos
         cursor.execute("SELECT id, nombre, departamento_id, nivel FROM puesto WHERE activo=1 ORDER BY nivel")
         puestos = cursor.fetchall()
 
-        # Traer todos los jefes posibles con depto y nivel, excluyendo la persona actual
+        # Traer todos los jefes posibles con depto y nivel
         cursor.execute("""
             SELECT p.id, p.nombres, p.apellidop, p.apellidom, pu.departamento_id, pu.nivel
             FROM persona p
@@ -173,12 +176,12 @@ def editar_persona(persona_id):
         cursor.execute("SELECT * FROM persona WHERE id=%s", (persona_id,))
         persona = cursor.fetchone()
 
-        # Traer puesto actual
+        # Puesto actual
         cursor.execute("SELECT id_puesto FROM asigna_puesto WHERE id_persona=%s", (persona_id,))
         current_puesto = cursor.fetchone()
         current_puesto_id = current_puesto['id_puesto'] if current_puesto else None
 
-        # Traer jefe actual
+        # Jefe actual
         cursor.execute("SELECT id_jefe FROM asigna_jefe WHERE id_persona=%s AND fecha_fin IS NULL", (persona_id,))
         current_jefe = cursor.fetchone()
         current_jefe_id = current_jefe['id_jefe'] if current_jefe else None
@@ -203,17 +206,67 @@ def editar_persona(persona_id):
             """, (nombres, apellidop, apellidom, telefono_uno, telefono_dos, numero_empleado, correo, persona_id))
             conn.commit()
 
+            # -------------------------------------------
+            # Detectar si CAMBIÓ EL PUESTO
+            # -------------------------------------------
+            cambio_puesto = (str(puesto_id) != str(current_puesto_id))
+
             # Actualizar puesto
             cursor.execute("DELETE FROM asigna_puesto WHERE id_persona=%s", (persona_id,))
             if puesto_id:
-                cursor.execute("INSERT INTO asigna_puesto (id_persona, id_puesto) VALUES (%s, %s)",
-                               (persona_id, puesto_id))
-                conn.commit()
+                cursor.execute("""
+                    INSERT INTO asigna_puesto (id_persona, id_puesto) 
+                    VALUES (%s, %s)
+                """, (persona_id, puesto_id))
+            conn.commit()
 
-           # Eliminar todas las asignaciones anteriores
+            # -------------------------------------------
+            # ***********************************+
+            # REGLA DE JERARQUÍA → SOLO SI CAMBIÓ EL PUESTO
+            # ***********************************+
+            if cambio_puesto:
+
+                # Obtener jefe directo actual antes de cambiar
+                cursor.execute("""
+                    SELECT id_jefe 
+                    FROM asigna_jefe 
+                    WHERE id_persona=%s AND fecha_fin IS NULL
+                """, (persona_id,))
+                row = cursor.fetchone()
+                jefe_directo_actual = row['id_jefe'] if row else None
+
+                # Obtener subordinados de esta persona
+                cursor.execute("""
+                    SELECT id_persona
+                    FROM asigna_jefe
+                    WHERE id_jefe=%s AND fecha_fin IS NULL
+                """, (persona_id,))
+                subordinados = [s['id_persona'] for s in cursor.fetchall()]
+
+                # Cerrar relación actual con subordinados
+                cursor.execute("""
+                    UPDATE asigna_jefe
+                    SET fecha_fin = CURDATE()
+                    WHERE id_jefe=%s AND fecha_fin IS NULL
+                """, (persona_id,))
+
+                # Reasignar subordinados al JEFE DIRECTO de esta persona
+                if jefe_directo_actual:
+                    for sub in subordinados:
+                        cursor.execute("""
+                            INSERT INTO asigna_jefe (id_persona, id_jefe, fecha_inicio)
+                            VALUES (%s, %s, CURDATE())
+                        """, (sub, jefe_directo_actual))
+
+                conn.commit()
+            # ***********************************+
+            # FIN DE REGLA DE JERARQUÍA
+            # -------------------------------------------
+
+            # Limpiar relaciones previas jefe → persona
             cursor.execute("DELETE FROM asigna_jefe WHERE id_persona=%s", (persona_id,))
 
-            # Insertar la nueva relación si existe jefe_id
+            # Insertar nuevo jefe
             if jefe_id:
                 cursor.execute("""
                     INSERT INTO asigna_jefe (id_persona, id_jefe, fecha_inicio) 
@@ -234,6 +287,7 @@ def editar_persona(persona_id):
         current_puesto_id=current_puesto_id,
         current_jefe_id=current_jefe_id
     )
+
 # -----------------------
 # Editar Persona
 # -----------------------
@@ -443,11 +497,10 @@ def nivel_jerarquico():
     departamentos = {
         1: "Auditoría",
         2: "Call Center",
-        3: "Campo 1-7",
-        4: "Campo 8-21",
-        5: "Campo 22+",
-        6: "Sabuesos",
-        7: "Cobranza"
+        3: "Campo 7-14",
+        4: "Campo 15-21",
+        5: "Sabuesos",
+        6: "Cobranza"
     }
 
     return render_template('nivel_jerarquico.html', departamentos=departamentos)
@@ -786,7 +839,146 @@ def nivel_jerarquico_colaborador_tabla(persona_id):
 
     return jsonify(data)
 #------------------------------------------
+# ------------------------------------------
+# ***********************************+
+#   MÓDULO: Gestión de RAZÓN_AUSENCIA y AUSENCIAS
+# ***********************************+
+# ------------------------------------------
 
+# Listar razones (catálogo)
+@app.route('/razon_ausencia')
+def listar_razon_ausencia():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, clave, nombre, descripcion, activo FROM razon_ausencia ORDER BY nombre")
+        razones = cursor.fetchall()
+    return render_template('razon_ausencia.html', razones=razones)
+
+# Crear / Editar razon_ausencia
+@app.route('/razon_ausencia/editar', methods=['GET','POST'])
+@app.route('/razon_ausencia/editar/<int:razon_id>', methods=['GET','POST'])
+def editar_razon_ausencia(razon_id=None):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if request.method == 'POST':
+            clave = request.form.get('clave')
+            nombre = request.form.get('nombre')
+            descripcion = request.form.get('descripcion')
+            activo = 1 if request.form.get('activo') == 'on' else 0
+
+            if razon_id:
+                cursor.execute("""
+                    UPDATE razon_ausencia
+                    SET clave=%s, nombre=%s, descripcion=%s, activo=%s
+                    WHERE id=%s
+                """, (clave, nombre, descripcion, activo, razon_id))
+            else:
+                cursor.execute("""
+                    INSERT INTO razon_ausencia (clave, nombre, descripcion, activo)
+                    VALUES (%s,%s,%s,%s)
+                """, (clave, nombre, descripcion, activo))
+            conn.commit()
+            flash("Catálogo de razón actualizado.", "success")
+            return redirect(url_for('listar_razon_ausencia'))
+
+        razon = None
+        if razon_id:
+            cursor.execute("SELECT * FROM razon_ausencia WHERE id=%s", (razon_id,))
+            razon = cursor.fetchone()
+
+    return render_template('editar_razon_ausencia.html', razon=razon)
+
+# Borrar / desactivar razón
+@app.route('/razon_ausencia/eliminar/<int:razon_id>', methods=['POST'])
+def eliminar_razon_ausencia(razon_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # opción: desactivar en lugar de eliminar físicamente
+        cursor.execute("UPDATE razon_ausencia SET activo=0 WHERE id=%s", (razon_id,))
+        conn.commit()
+    flash("Razón marcada como inactiva.", "warning")
+    return redirect(url_for('listar_razon_ausencia'))
+
+# ---------------------------
+# Registrar Ausencia (form + guardar)
+# ---------------------------
+@app.route('/ausencia/registrar/<int:persona_id>', methods=['GET','POST'])
+@app.route('/ausencia/registrar', methods=['GET','POST'])
+def registrar_ausencia(persona_id=None):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # traer razones activas
+        cursor.execute("SELECT id, nombre FROM razon_ausencia WHERE activo=1 ORDER BY nombre")
+        razones = cursor.fetchall()
+
+        # si se pasa persona_id, cargar datos de la persona para mostrar
+        persona = None
+        if persona_id:
+            cursor.execute("SELECT id, nombres, apellidop, apellidom, numero_empleado FROM persona WHERE id=%s", (persona_id,))
+            persona = cursor.fetchone()
+
+    if request.method == 'POST':
+        id_persona = request.form.get('id_persona') or persona_id
+        id_razon = request.form.get('id_razon')
+        descripcion = request.form.get('descripcion')
+
+        # El formulario tendrá campos datetime-local para fecha+hora
+        fecha_inicio_raw = request.form.get('fecha_inicio')   # formato HTML: 'YYYY-MM-DDTHH:MM'
+        fecha_fin_raw = request.form.get('fecha_fin')
+
+        # Validaciones básicas
+        if not id_persona or not id_razon or not fecha_inicio_raw or not fecha_fin_raw:
+            flash("Faltan campos obligatorios (persona, razón, fecha inicio/fin).", "danger")
+            return redirect(request.url)
+
+        # Convertir a DATETIME compatible MySQL: 'YYYY-MM-DD HH:MM:SS'
+        try:
+            fecha_inicio = datetime.fromisoformat(fecha_inicio_raw)
+            fecha_fin = datetime.fromisoformat(fecha_fin_raw)
+        except Exception as e:
+            flash("Formato de fecha/hora inválido.", "danger")
+            return redirect(request.url)
+
+        # Guardar en BD
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO ausencia (id_persona, id_razon, descripcion, fecha_inicio, fecha_fin, creado_por)
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (id_persona, id_razon, descripcion, fecha_inicio.strftime('%Y-%m-%d %H:%M:%S'),
+                  fecha_fin.strftime('%Y-%m-%d %H:%M:%S'), (request.remote_addr or 'web')))
+            conn.commit()
+        flash("Ausencia registrada correctamente.", "success")
+        return redirect(url_for('index'))
+
+    # GET: render form
+    return render_template('registrar_ausencia.html', persona=persona, razones=razones, persona_id=persona_id)
+
+# Ver ausencias de una persona
+@app.route('/ausencia/persona/<int:persona_id>')
+def ver_ausencias_persona(persona_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT a.id, a.id_persona, a.id_razon, r.nombre as razon, a.descripcion,
+                   a.fecha_inicio, a.fecha_fin, a.activo, a.fecha_creacion
+            FROM ausencia a
+            LEFT JOIN razon_ausencia r ON r.id = a.id_razon
+            WHERE a.id_persona=%s
+            ORDER BY a.fecha_inicio DESC
+        """, (persona_id,))
+        ausencias = cursor.fetchall()
+    return render_template('ver_ausencias_persona.html', ausencias=ausencias, persona_id=persona_id)
+
+# Desactivar (eliminar lógico) ausencia
+@app.route('/ausencia/eliminar/<int:ausencia_id>', methods=['POST'])
+def eliminar_ausencia(ausencia_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE ausencia SET activo=0 WHERE id=%s", (ausencia_id,))
+        conn.commit()
+    flash("Ausencia desactivada.", "warning")
+    return redirect(request.referrer or url_for('index'))
 
 
 # -----------------------

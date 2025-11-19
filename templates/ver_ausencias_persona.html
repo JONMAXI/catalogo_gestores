@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>Ausencias del empleado</h3>
+<a href="{{ url_for('registrar_ausencia', persona_id=persona_id) }}" class="btn btn-warning mb-2">Registrar nueva ausencia</a>
+
+<table class="table table-sm">
+  <thead><tr><th>ID</th><th>Razón</th><th>Inicio</th><th>Fin</th><th>Descripción</th><th>Activo</th><th>Acciones</th></tr></thead>
+  <tbody>
+    {% for a in ausencias %}
+      <tr>
+        <td>{{ a['id'] }}</td>
+        <td>{{ a['razon'] }}</td>
+        <td>{{ a['fecha_inicio'] }}</td>
+        <td>{{ a['fecha_fin'] }}</td>
+        <td>{{ a['descripcion'] }}</td>
+        <td>{{ 'Sí' if a['activo'] else 'No' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('eliminar_ausencia', ausencia_id=a['id']) }}" style="display:inline" onsubmit="return confirm('Desactivar ausencia?');">
+            <button class="btn btn-sm btn-danger">Desactivar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
