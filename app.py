@@ -497,7 +497,7 @@ def nivel_jerarquico():
     departamentos = {
         1: "Auditoría",
         2: "Call Center",
-        3: "Campo 7-14",
+        3: "Campo 1-14",
         4: "Campo 15-21",
         5: "Sabuesos",
         6: "Cobranza"
@@ -732,7 +732,7 @@ def nivel_jerarquico_colaborador(persona_id):
     # Contar gestores por jefe
     gestores_count = defaultdict(int)
     for p in personas_filtradas_pre:
-        if p['id_puesto'] == 25 and p.get('id_jefe'):
+        if p['id_puesto'] == 1 and p.get('id_jefe'):
             gestores_count[p['id_jefe']] += 1
 
     # Marcar jefes con la cantidad de gestores
@@ -745,7 +745,7 @@ def nivel_jerarquico_colaborador(persona_id):
             p['gestores_count'] = 0
 
     # Eliminar los nodos individuales de los gestores para que no se dibujen
-    personas_filtradas_pre = [p for p in personas_filtradas_pre if p['id_puesto'] != 25]
+    personas_filtradas_pre = [p for p in personas_filtradas_pre if p['id_puesto'] != 1]
 
     # Ahora pasas personas_filtradas_pre a tu función original
     graph_base64 = generar_grafica(personas_filtradas_pre)
