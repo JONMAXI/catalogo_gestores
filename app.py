@@ -520,7 +520,7 @@ def nivel_jerarquico_personas(dep_id):
         cursor.execute("""
             SELECT id, nombre, nivel
             FROM puesto
-            WHERE activo = 1 AND nombre != 'Gestor 1-7' AND departamento_id = %s
+            WHERE activo = 1 AND nombre != 'Gestor 1-14' AND departamento_id = %s
         """, (dep_id,))
         puestos = cursor.fetchall()
 
