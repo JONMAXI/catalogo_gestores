@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h3>Asignar roles a: {{ usuario.nombres }} {{ usuario.apellidop }}</h3>
+
+  <form method="post">
+    <div class="card p-3">
+      <h5>Roles</h5>
+      <div class="row">
+        {% for r in roles %}
+        <div class="col-md-4">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="roles" value="{{ r.id }}"
+                   id="rol_{{ r.id }}" {% if r.id in actuales %} checked {% endif %}>
+            <label class="form-check-label" for="rol_{{ r.id }}">{{ r.nombre }}</label>
+            {% if r.descripcion %}
+              <div class="small text-muted">{{ r.descripcion }}</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <br>
+    <button class="btn btn-primary">Guardar roles</button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">Volver</a>
+  </form>
+</div>
+{% endblock %}

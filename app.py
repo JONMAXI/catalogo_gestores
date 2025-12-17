@@ -980,6 +980,176 @@ def eliminar_ausencia(ausencia_id):
     flash("Ausencia desactivada.", "warning")
     return redirect(request.referrer or url_for('index'))
 
+# -----------------------
+# 
+# -----------------------
+# Lista de roles
+@app.route('/roles')
+def listar_roles():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM roles ORDER BY nombre")
+        roles = cursor.fetchall()
+    return render_template('roles_list.html', roles=roles)
+
+# Crear / editar rol
+@app.route('/roles/editar', methods=['GET','POST'])
+@app.route('/roles/editar/<int:rol_id>', methods=['GET','POST'])
+def editar_rol(rol_id=None):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if request.method == 'POST':
+            nombre = request.form.get('nombre')
+            descripcion = request.form.get('descripcion')
+            activo = 1 if request.form.get('activo') == 'on' else 0
+
+            if rol_id:
+                cursor.execute("""
+                    UPDATE roles SET nombre=%s, descripcion=%s, activo=%s WHERE id=%s
+                """, (nombre, descripcion, activo, rol_id))
+                flash("Rol actualizado.", "success")
+            else:
+                cursor.execute("""
+                    INSERT INTO roles (nombre, descripcion, activo) VALUES (%s,%s,%s)
+                """, (nombre, descripcion, activo))
+                flash("Rol creado.", "success")
+            conn.commit()
+            return redirect(url_for('listar_roles'))
+
+        rol = None
+        if rol_id:
+            cursor.execute("SELECT * FROM roles WHERE id=%s", (rol_id,))
+            rol = cursor.fetchone()
+
+    return render_template('roles_edit.html', rol=rol)
+
+# Eliminar/desactivar rol (soft)
+@app.route('/roles/eliminar/<int:rol_id>', methods=['POST'])
+def eliminar_rol(rol_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE roles SET activo=0 WHERE id=%s", (rol_id,))
+        conn.commit()
+    flash("Rol desactivado.", "warning")
+    return redirect(url_for('listar_roles'))
+
+# Editar permisos de un ROL (checkboxes por ruta)
+@app.route('/roles/<int:rol_id>/permisos', methods=['GET','POST'])
+def editar_permisos_rol(rol_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # Obtener rol
+        cursor.execute("SELECT * FROM roles WHERE id=%s", (rol_id,))
+        rol = cursor.fetchone()
+
+        # Todas las rutas/módulos
+        cursor.execute("SELECT * FROM rutas WHERE activo=1 ORDER BY id")
+        rutas = cursor.fetchall()
+
+        # Permisos actuales del rol
+        cursor.execute("SELECT ruta_id FROM permiso_rol WHERE rol_id=%s", (rol_id,))
+        actuales = {r['ruta_id'] for r in cursor.fetchall()}
+
+        if request.method == 'POST':
+            seleccionadas = request.form.getlist('rutas')  # strings de ids
+            # Normalizar a ints (seguro)
+            seleccionadas = [int(x) for x in seleccionadas]
+
+            # Eliminar permisos previos y reinsertar
+            cursor.execute("DELETE FROM permiso_rol WHERE rol_id=%s", (rol_id,))
+            if seleccionadas:
+                args = [(rol_id, rid) for rid in seleccionadas]
+                cursor.executemany("INSERT INTO permiso_rol (rol_id, ruta_id) VALUES (%s,%s)", args)
+            conn.commit()
+            flash("Permisos del rol actualizados.", "success")
+            return redirect(url_for('editar_permisos_rol', rol_id=rol_id))
+
+    return render_template('editar_permisos.html', rol=rol, rutas=rutas, actuales=actuales)
+
+# Asignar roles a un usuario (multiples)
+@app.route('/usuarios/<int:usuario_id>/roles', methods=['GET','POST'])
+def asignar_roles_usuario(usuario_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, nombres, apellidop, apellidom FROM persona WHERE id=%s", (usuario_id,))
+        usuario = cursor.fetchone()
+
+        # Lista de roles activos
+        cursor.execute("SELECT * FROM roles WHERE activo=1 ORDER BY nombre")
+        roles = cursor.fetchall()
+
+        # Roles actuales del usuario
+        cursor.execute("SELECT rol_id FROM usuario_roles WHERE usuario_id=%s", (usuario_id,))
+        actuales = {r['rol_id'] for r in cursor.fetchall()}
+
+        if request.method == 'POST':
+            seleccionados = request.form.getlist('roles')  # strings
+            seleccionados = [int(x) for x in seleccionados]
+
+            # Reemplazar asignaciones (simple estrategia)
+            cursor.execute("DELETE FROM usuario_roles WHERE usuario_id=%s", (usuario_id,))
+            if seleccionados:
+                args = [(usuario_id, rid) for rid in seleccionados]
+                cursor.executemany("INSERT INTO usuario_roles (usuario_id, rol_id) VALUES (%s,%s)", args)
+            conn.commit()
+            flash("Roles asignados al usuario.", "success")
+            return redirect(url_for('asignar_roles_usuario', usuario_id=usuario_id))
+
+    return render_template('asignar_roles.html', usuario=usuario, roles=roles, actuales=actuales)
+
+# Editar permisos por USUARIO (excepciones directas)
+@app.route('/usuarios/<int:usuario_id>/permisos', methods=['GET','POST'])
+def editar_permisos_usuario(usuario_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, nombres, apellidop, apellidom FROM persona WHERE id=%s", (usuario_id,))
+        usuario = cursor.fetchone()
+
+        cursor.execute("SELECT * FROM rutas WHERE activo=1 ORDER BY nombre")
+        rutas = cursor.fetchall()
+
+        cursor.execute("SELECT ruta_id FROM permisos_usuario WHERE usuario_id=%s", (usuario_id,))
+        actuales = {r['ruta_id'] for r in cursor.fetchall()}
+
+        if request.method == 'POST':
+            seleccionadas = [int(x) for x in request.form.getlist('rutas')]
+            cursor.execute("DELETE FROM permisos_usuario WHERE usuario_id=%s", (usuario_id,))
+            if seleccionadas:
+                args = [(usuario_id, rid) for rid in seleccionadas]
+                cursor.executemany("INSERT INTO permisos_usuario (usuario_id, ruta_id) VALUES (%s,%s)", args)
+            conn.commit()
+            flash("Permisos directos del usuario actualizados.", "success")
+            return redirect(url_for('editar_permisos_usuario', usuario_id=usuario_id))
+
+    return render_template('editar_permisos_usuario.html', usuario=usuario, rutas=rutas, actuales=actuales)
+
+
+# Helper: obtener permisos efectivos de un usuario (roles + permisos usuario)
+def obtener_permisos_efectivos(usuario_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # Permisos via roles
+        cursor.execute("""
+            SELECT r.ruta
+            FROM permiso_rol pr
+            JOIN rutas r ON r.id = pr.ruta_id
+            JOIN usuario_roles ur ON ur.rol_id = pr.rol_id
+            WHERE ur.usuario_id = %s
+        """, (usuario_id,))
+        via_roles = {row['ruta'] for row in cursor.fetchall()}
+
+        # Permisos directos usuario (añadir)
+        cursor.execute("""
+            SELECT r.ruta
+            FROM permisos_usuario pu
+            JOIN rutas r ON r.id = pu.ruta_id
+            WHERE pu.usuario_id = %s
+        """, (usuario_id,))
+        directos = {row['ruta'] for row in cursor.fetchall()}
+
+    # union: roles + directos
+    return via_roles | directos
+
 
 # -----------------------
 # Run App

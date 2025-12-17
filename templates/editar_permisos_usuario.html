@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h3>Permisos directos: {{ usuario.nombres }} {{ usuario.apellidop }}</h3>
+
+  <form method="post">
+    <div class="card p-3">
+      <h5>Módulos (excepciones)</h5>
+      <div class="row">
+        {% for m in rutas %}
+        <div class="col-md-4">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="rutas" value="{{ m.id }}"
+                   id="ruta_user_{{ m.id }}"
+                   {% if m.id in actuales %} checked {% endif %}>
+            <label class="form-check-label" for="ruta_user_{{ m.id }}">{{ m.nombre }}</label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <br>
+    <button class="btn btn-primary">Guardar</button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">Volver</a>
+  </form>
+</div>
+{% endblock %}

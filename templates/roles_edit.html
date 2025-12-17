@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h3>{{ 'Editar rol' if rol else 'Crear rol' }}</h3>
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Nombre</label>
+      <input class="form-control" name="nombre" value="{{ rol.nombre if rol else '' }}" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Descripción</label>
+      <textarea class="form-control" name="descripcion">{{ rol.descripcion if rol else '' }}</textarea>
+    </div>
+    <div class="form-check mb-3">
+      <input type="checkbox" class="form-check-input" id="activo" name="activo" {% if rol and rol.activo==1 %}checked{% endif %}>
+      <label class="form-check-label" for="activo">Activo</label>
+    </div>
+    <button class="btn btn-primary">Guardar</button>
+  </form>
+</div>
+{% endblock %}

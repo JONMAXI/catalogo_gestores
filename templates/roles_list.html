@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>Roles</h2>
+  <a href="{{ url_for('editar_rol') }}" class="btn btn-success mb-3">Crear nuevo rol</a>
+
+  <table class="table table-striped">
+    <thead><tr><th>ID</th><th>Nombre</th><th>Activo</th><th>Acciones</th></tr></thead>
+    <tbody>
+      {% for r in roles %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.nombre }}</td>
+        <td>{{ 'Sí' if r.activo==1 else 'No' }}</td>
+        <td>
+          <a class="btn btn-sm btn-primary" href="{{ url_for('editar_rol', rol_id=r.id) }}">Editar</a>
+          <a class="btn btn-sm btn-info" href="{{ url_for('editar_permisos_rol', rol_id=r.id) }}">Permisos</a>
+          <form style="display:inline" method="post" action="{{ url_for('eliminar_rol', rol_id=r.id) }}">
+            <button class="btn btn-sm btn-danger" onclick="return confirm('Desactivar rol?')">Desactivar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
