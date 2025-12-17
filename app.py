@@ -109,7 +109,7 @@ def registrar_persona():
 
             # Insertar persona
             cursor.execute("""
-                INSERT INTO persona (nombres, apellidop, apellidom, telefono_uno, telefono_dos, numero_empleado, correo, username, password)
+                INSERT INTO persona (nombres, apellidop, apellidom, telefono_uno, telefono_dos, numero_empleado, correo, user_name, password)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (nombres, apellidop, apellidom, telefono_uno, telefono_dos, numero_empleado, correo, username, password))
             conn.commit()
