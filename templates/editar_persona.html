@@ -94,12 +94,12 @@
     <div class="mb-3">
       <label for="username" class="form-label">Usuario</label>
       <input type="text" class="form-control" name="username" id="username" maxlength="20" pattern="^[A-Za-z0-9_]+$"
-             title="Solo letras, números y guiones bajos" placeholder="ej. número de empleado" value="{{ persona.user_name }}">
+             title="Solo letras, números y guiones bajos" placeholder="ej. número de empleado" value="{{ persona.user_name }}" readonly>
     </div>
 
     <div class="mb-3">
       <label for="password" class="form-label">Contraseña</label>
-      <input type="password" class="form-control" name="password" id="password" maxlength="30" minlength="6" placeholder="********" value="{{ persona.password }}">
+      <input type="text" class="form-control" name="password" id="password" maxlength="30" minlength="6" placeholder="********" value="{{ persona.password }}">
     </div>
 
     <button type="submit" class="btn btn-primary">
